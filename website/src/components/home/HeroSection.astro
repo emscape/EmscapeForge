@@ -1,8 +1,10 @@
 ---
-import { Image } from 'astro:assets';
+import { Image } from 'astro:assets'; // Keep this for potential future use or other images
 import config from '../../config';
+import heroImage from '/public/images/background-hero.jpg'; // Adjust extension if needed
 ---
 
+  <Image src={heroImage} alt="Hero banner image" class="hero-banner-image" width={1200} height={400} format="webp" quality={80} />
 <section class="hero-section">
   <div class="container">
     <div class="hero-content">
@@ -17,17 +19,7 @@ import config from '../../config';
         <a href="/about" class="button secondary">About Me</a>
       </div>
     </div>
-    <div class="hero-image">
-      <!-- Placeholder for hero image -->
-      <div class="image-placeholder">
-        <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-          <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-          <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
-        </svg>
-        <p>Hero Image</p>
-      </div>
-    </div>
+    <!-- Removed hero-image div -->
   </div>
   
   <div class="hero-background">
@@ -39,12 +31,13 @@ import config from '../../config';
 
 <style lang="scss">
   .hero-section {
-    position: relative;
-    min-height: 80vh;
-    display: flex;
-    align-items: center;
-    overflow: hidden;
-    padding: 2rem 0;
+    position: relative; /* Keep for absolute positioned shapes */
+    /* min-height: 80vh; Removed */
+    /* display: flex; Removed */
+    /* align-items: center; Removed */
+    overflow: hidden; /* Keep to contain shapes */
+    padding: 0; /* Remove padding, let image be full width */
+    /* Consider adding padding back to .container if needed */
   }
   
   .hero-content {
@@ -181,8 +174,8 @@ import config from '../../config';
   }
   
   .container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: grid; /* Keep grid for potential future use, or could change to flex/block */
+    /* grid-template-columns: 1fr 1fr; Removed */
     gap: 2rem;
     align-items: center;
   }
@@ -196,4 +189,14 @@ import config from '../../config';
       display: none;
     }
   }
+  
+  .hero-banner-image {
+    display: block; /* Ensure it takes up block space */
+    width: 100%; /* Span full width */
+    height: auto; /* Maintain aspect ratio */
+    max-height: 500px; /* Optional: Limit max height */
+    object-fit: cover; /* Cover the area */
+  }
+
+
 </style>

@@ -15,7 +15,25 @@ const blogCollection = defineCollection({
   }),
 });
 
+// Define the schema for the presentations collection
+const presentationsCollection = defineCollection({
+  type: 'content', // Assuming Markdown for descriptions, etc.
+  schema: ({ image }) => z.object({
+    title: z.string(),
+    description: z.string(),
+    date: z.date(),
+    tags: z.array(z.string()),
+    // thumbnailImage: image().optional(), // Optional thumbnail - Temporarily removed
+    filePath: z.string(), // Path to the PPTX file (relative to public or absolute URL)
+    pdfPath: z.string().optional(), // Optional path to the PDF file
+    slideCount: z.number().optional(), // Optional slide count
+    author: z.string().optional(), // Optional author
+    featured: z.boolean().optional(), // Optional featured status
+  }),
+});
+
 // Export a single `collections` object to register your collection(s)
 export const collections = {
   'blog': blogCollection,
+  'presentations': presentationsCollection, // Register the new collection
 };

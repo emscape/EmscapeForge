@@ -1,38 +1,36 @@
 ---
-// This is a placeholder component for recent blog posts
-// In the future, this will fetch data from the blog posts directory
+import { getCollection } from 'astro:content';
+import { Image } from 'astro:assets';
 
-// Mock data for now
-const recentPosts = [
-  {
-    title: "Getting Started with Astro",
-    slug: "getting-started-with-astro",
-    date: "2025-03-20",
-    excerpt: "Learn how to build fast, content-focused websites with Astro's unique approach to rendering.",
-    featuredImage: "/images/blog/astro-post/featured.jpg",
-    tags: ["Web Development", "Astro", "JavaScript"]
-  },
-  {
-    title: "Creating a PowerPoint Embedding System",
-    slug: "powerpoint-embedding-system",
-    date: "2025-03-15",
-    excerpt: "How to embed PowerPoint presentations in your web content with fallbacks for different devices.",
-    featuredImage: "/images/blog/powerpoint-post/featured.jpg",
-    tags: ["PowerPoint", "Embedding", "Web Development"]
-  },
-  {
-    title: "Responsive Design Patterns",
-    slug: "responsive-design-patterns",
-    date: "2025-03-10",
-    excerpt: "Explore effective patterns for creating responsive websites that work on all devices.",
-    featuredImage: "/images/blog/responsive-post/featured.jpg",
-    tags: ["CSS", "Responsive Design", "Web Development"]
-  }
-];
+// Fetch all blog posts
+const allPosts = await getCollection('blog');
+
+// Sort posts by publication date (newest first)
+const sortedPosts = allPosts.sort((a, b) => new Date(b.data.pubDate).valueOf() - new Date(a.data.pubDate).valueOf());
+
+// Get the 3 most recent posts
+const recentPostsData = sortedPosts.slice(0, 3);
+
+// Map posts to the format needed by the template
+const recentPosts = recentPostsData.map(post => ({
+  title: post.data.title,
+  slug: post.slug,
+  date: post.data.pubDate, // Pass the Date object or string directly
+  excerpt: post.data.description, // Using description as excerpt
+  featuredImage: post.data.featuredImage, // Assuming Astro handles image paths or it's configured
+  tags: post.data.tags || [] // Ensure tags is always an array
+}));
+
 
 // Format date
-function formatDate(dateString) {
-  const date = new Date(dateString);
+function formatDate(dateInput) {
+  // Check if dateInput is already a Date object or a string/number
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  // Check if the date is valid before formatting
+  if (isNaN(date.getTime())) {
+    console.error("Invalid date passed to formatDate:", dateInput);
+    return "Invalid Date"; // Or return an empty string or default text
+  }
   return date.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -53,13 +51,24 @@ function formatDate(dateString) {
         <article class="post-card">
           <div class="post-image">
             <a href={`/blog/${post.slug}`}>
-              <div class="image-placeholder">
-                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <polyline points="21 15 16 10 5 21"></polyline>
-                </svg>
-              </div>
+              {post.featuredImage ? (
+                <Image
+                  src={post.featuredImage}
+                  alt={post.title}
+                  width={350}
+                  height={200}
+                  format="webp"
+                  quality={80}
+                />
+              ) : (
+                <div class="image-placeholder">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                </div>
+              )}
             </a>
           </div>
           <div class="post-content">

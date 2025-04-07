@@ -1,5 +1,5 @@
 ---
-title: "The Ethics and Impact of AI: Personal Benefits vs. Societal Concerns"
+title: "Good for Me, Bad for Us? Weighing AI’s Personal Perks Against Societal Risks"
 description: "An exploration of the tension between AI's personal benefits and its potential societal consequences, including job displacement and copyright concerns."
 pubDate: 2025-03-10
 author: "Emily Anderson"

@@ -1,55 +1,30 @@
 ---
+import { getCollection } from 'astro:content';
 import Layout from '../../layouts/Layout.astro';
 
-// This is a placeholder until we implement the actual components and utilities
-const presentations = [
-  {
-    slug: "introduction-to-astro",
-    title: "Introduction to Astro Framework",
-    description: "Learn the basics of the Astro framework for building fast, content-focused websites",
-    date: "2025-03-15",
-    tags: ["web development", "astro", "javascript"],
-    thumbnailImage: "/images/presentations/introduction-to-astro/thumbnail.jpg",
-    filePath: "/presentations/introduction-to-astro.pptx",
-    pdfPath: "/presentations/introduction-to-astro.pdf",
-    slideCount: 24,
-    author: "Emily",
-    featured: true
-  },
-  {
-    slug: "responsive-design-patterns",
-    title: "Modern Responsive Design Patterns",
-    description: "Explore effective patterns for creating responsive websites that work on all devices",
-    date: "2025-02-28",
-    tags: ["design", "css", "responsive"],
-    thumbnailImage: "/images/presentations/responsive-design-patterns/thumbnail.jpg",
-    filePath: "/presentations/responsive-design-patterns.pptx",
-    pdfPath: "/presentations/responsive-design-patterns.pdf",
-    slideCount: 18,
-    author: "Emily",
-    featured: false
-  }
-];
-
-export function getStaticPaths() {
-  return presentations.map(presentation => ({
-    params: { slug: presentation.slug },
-    props: { presentation }
+export async function getStaticPaths() {
+  const presentations = await getCollection('presentations');
+  return presentations.map(entry => ({
+    params: { slug: entry.slug },
+    props: { entry }, // Pass the full entry object
   }));
 }
 
-const { presentation } = Astro.props;
+const { entry } = Astro.props;
+const presentation = entry.data; // Extract data from the entry
 
 // Encode the URL for Office Online
+// Ensure filePath exists before encoding
+const filePath = presentation.filePath || '';
 const encodedSrc = encodeURIComponent(
-  // Convert relative path to absolute URL
-  presentation.filePath.startsWith('http') 
-    ? presentation.filePath 
-    : `https://emscapeforge.com${presentation.filePath}`
+  // Convert relative path to absolute URL - Assuming filePath starts with '/' for public assets
+  filePath.startsWith('http')
+    ? filePath
+    : `https://emscapeforge.com${filePath}` // Use site URL from config
 );
 
 // Office Online embed URL
-const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedSrc}`;
+const officeEmbedUrl = filePath ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodedSrc}` : '';
 ---
 
 <Layout title={`${presentation.title} - EmscapeForge`}>
