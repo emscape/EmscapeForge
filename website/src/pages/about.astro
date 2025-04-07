@@ -1,0 +1,374 @@
+---
+import Layout from '../layouts/Layout.astro';
+import config from '../config';
+---
+
+<Layout 
+  title={`About - ${config.site.title}`}
+  description="Learn more about Emily and her background, skills, and interests"
+>
+  <section class="about-page">
+    <div class="container">
+      <div class="about-header">
+        <h1>About Me</h1>
+        <div class="profile-image">
+          <div class="image-placeholder">
+            <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+          </div>
+        </div>
+      </div>
+      
+      <div class="about-content">
+        <div class="bio">
+          <h2>Bio</h2>
+          <p>
+            Hello! I'm Emily, a seasoned Innovation Engineer based in Los Angeles, CA. I specialize in bridging the gap between technology and business, with expertise in Agile methodologies and a wide array of technical proficiencies.
+          </p>
+          <p>
+            With 11 years of professional experience in software development, I've led the development of innovative proofs of concept, educational curricula, and efficient technical solutions. I'm highly skilled in technical documentation, rule development, and vendor analysis.
+          </p>
+          <p>
+            Beyond my professional roles, I'm an active community leader, serving as a Women Techmakers Ambassador and Google Developer Groups Organizer. I'm passionate about sharing knowledge and empowering others in the tech community.
+          </p>
+        </div>
+
+        <div class="skills">
+          <h2>My Skills</h2>
+          <div class="skills-grid skills-3-col"> {/* Adjusted class for potential styling */}
+            <div class="skill-category">
+              <h3>AI & Data</h3>
+              <ul>
+                <li>Generative AI</li>
+                <li>Machine Learning</li>
+                <li>SQL (MS SQL, T-SQL, Oracle)</li>
+                <li>Business Rules</li>
+              </ul>
+            </div>
+
+            <div class="skill-category">
+              <h3>Technical Expertise</h3>
+              <ul>
+                <li>Technical Documentation</li>
+                <li>Code Documentation</li>
+                <li>Curriculum Development</li>
+                <li>Cybersecurity Best Practices</li>
+              </ul>
+            </div>
+
+            <div class="skill-category">
+              <h3>Leadership & Communication</h3>
+              <ul>
+                <li>Agile Methodologies</li>
+                <li>Technical Consulting</li>
+                <li>Public Speaking</li>
+                <li>Technology Integration</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="experience">
+          <h2>Experience</h2>
+          <div class="timeline">
+            {/* Last 4 roles */}
+            <div class="timeline-item">
+              <div class="timeline-marker"></div>
+              <div class="timeline-content">
+                <h3>Application Developer, Consultant | Enterprise Architecture & Health Innovation Technology</h3>
+                <p class="timeline-company">Stellarus</p>
+                <p class="timeline-date">Jan 2025 - Present</p>
+                <p>Research emerging tech, develop prototypes/POCs, create training, author EA/BA artifacts, deliver presentations.</p>
+              </div>
+            </div>
+
+            <div class="timeline-item">
+              <div class="timeline-marker"></div>
+              <div class="timeline-content">
+                <h3>Application Developer, Consultant | Enterprise Architecture and Health Innovation Technology</h3>
+                <p class="timeline-company">Blue Shield of California</p>
+                <p class="timeline-date">Jun 2022 - Dec 2024</p>
+                <p>Research emerging tech, develop prototypes/POCs, create training, author EA/BA artifacts, deliver presentations.</p>
+              </div>
+            </div>
+
+            <div class="timeline-item">
+              <div class="timeline-marker"></div>
+              <div class="timeline-content">
+                <h3>Application Developer / Programmer Lead</h3>
+                <p class="timeline-company">Populus Group (for Blue Shield of California)</p>
+                <p class="timeline-date">Oct 2021 - Jun 2022</p>
+                <p>Production support, troubleshooting, technical solution design, code streamlining, Confluence documentation.</p>
+              </div>
+            </div>
+
+            <div class="timeline-item">
+              <div class="timeline-marker"></div>
+              <div class="timeline-content">
+                <h3>Rules Analyst / Product Owner / Rules Developer</h3>
+                <p class="timeline-company">SGS Technologie (for Guidewell Florida Blue)</p>
+                <p class="timeline-date">Jun 2021 - Aug 2021</p>
+                <p>Gather requirements, document rules, develop using Red Hat Decision Manager, Agile/Rally.</p>
+              </div>
+            </div>
+            {/* Placeholder for "See More" button/logic */}
+          </div>
+        </div>
+
+        <div class="cta">
+          <h2>Get In Touch</h2>
+          <p>
+            I'm always open to interesting conversations and opportunities. Feel free to reach out!
+          </p>
+          <div class="cta-buttons">
+            <a href="mailto:contact@emscapeforge.com" class="button primary">Email Me</a>
+            <a href={config.social.github} target="_blank" rel="noopener noreferrer" class="button secondary">GitHub</a>
+            <a href={config.social.linkedin} target="_blank" rel="noopener noreferrer" class="button secondary">LinkedIn</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style lang="scss">
+  .about-page {
+    padding: 2rem 0 4rem;
+  }
+  
+  .about-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 3rem;
+    
+    h1 {
+      font-size: 3rem;
+      margin: 0;
+    }
+  }
+  
+  .profile-image {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    overflow: hidden;
+    
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    .image-placeholder {
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-text);
+      opacity: 0.7;
+      
+      .dark-mode & {
+        background-color: rgba(255, 255, 255, 0.05);
+      }
+    }
+  }
+  
+  .about-content {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+    
+    h2 {
+      font-size: 1.75rem;
+      margin-top: 0;
+      margin-bottom: 1.5rem;
+      position: relative;
+      
+      &::after {
+        content: '';
+        position: absolute;
+        bottom: -0.5rem;
+        left: 0;
+        width: 50px;
+        height: 3px;
+        background-color: var(--color-primary);
+      }
+    }
+    
+    p {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+      
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+  }
+  
+  .skills-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 2rem;
+  }
+  
+  .skill-category {
+    h3 {
+      font-size: 1.25rem;
+      margin-top: 0;
+      margin-bottom: 1rem;
+      color: var(--color-primary);
+    }
+    
+    ul {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+      
+      li {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        
+        .dark-mode & {
+          border-bottom-color: rgba(255, 255, 255, 0.05);
+        }
+        
+        &:last-child {
+          border-bottom: none;
+        }
+      }
+    }
+  }
+  
+  .timeline {
+    position: relative;
+    
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 15px;
+      width: 2px;
+      background-color: rgba(0, 0, 0, 0.1);
+      
+      .dark-mode & {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+    }
+  }
+  
+  .timeline-item {
+    display: flex;
+    margin-bottom: 2rem;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+  
+  .timeline-marker {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background-color: var(--color-primary);
+    margin-right: 1.5rem;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+  }
+  
+  .timeline-content {
+    flex-grow: 1;
+    
+    h3 {
+      font-size: 1.25rem;
+      margin-top: 0;
+      margin-bottom: 0.5rem;
+    }
+    
+    .timeline-date {
+      font-size: 0.9rem;
+      color: var(--color-text);
+      opacity: 0.7;
+      margin-bottom: 0.75rem;
+    }
+  }
+  
+  .cta {
+    text-align: center;
+    padding: 2rem;
+    background-color: rgba(0, 0, 0, 0.02);
+    border-radius: var(--border-radius-large);
+    
+    .dark-mode & {
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+    
+    h2 {
+      &::after {
+        left: 50%;
+        transform: translateX(-50%);
+      }
+    }
+    
+    .cta-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 1.5rem;
+    }
+    
+    .button {
+      display: inline-block;
+      padding: 0.8rem 1.5rem;
+      border-radius: var(--border-radius-medium);
+      font-weight: 500;
+      text-decoration: none;
+      transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+      
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-medium);
+      }
+      
+      &.primary {
+        background-color: var(--color-primary);
+        color: white;
+      }
+      
+      &.secondary {
+        background-color: transparent;
+        color: var(--color-text);
+        border: 2px solid var(--color-primary);
+      }
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .about-header {
+      flex-direction: column;
+      text-align: center;
+      gap: 1.5rem;
+    }
+    
+    .about-content h2::after {
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    
+    .skills-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .timeline::before {
+      left: 15px;
+    }
+  }
+</style>

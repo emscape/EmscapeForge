@@ -1,0 +1,16 @@
+---
+import Layout from '../layouts/Layout.astro';
+import HeroSection from '../components/home/HeroSection.astro';
+import FeaturedProjects from '../components/home/FeaturedProjects.astro';
+import RecentPosts from '../components/home/RecentPosts.astro';
+import config from '../config';
+---
+
+<Layout
+  title={`${config.site.title} - Home`}
+  description="Emily's personal website showcasing projects, blog posts, and professional information"
+>
+  <HeroSection />
+  <FeaturedProjects />
+  <RecentPosts />
+</Layout>

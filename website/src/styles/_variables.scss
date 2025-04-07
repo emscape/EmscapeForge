@@ -1,0 +1,66 @@
+// SCSS Variables based on theme.js
+
+// Colors
+$color-primary-light: #00B5AD; // Teal
+$color-primary-dark: #008B8B; // Dark Teal
+
+$color-secondary-light: #40E0D0; // Aqua
+$color-secondary-dark: #20B2AA; // Dark Aqua
+
+$color-accent-light: #FF8C00; // Orange
+$color-accent-dark: #FF7F50; // Dark Orange
+
+$color-background-light: #FFFFFF;
+$color-background-dark: #121212;
+
+$color-text-light: #333333;
+$color-text-dark: #F5F5F5;
+
+// Fonts
+$font-body: 'Inter, system-ui, sans-serif';
+$font-heading: 'Montserrat, Georgia, serif';
+
+// Border Radius
+$border-radius-small: 4px;
+$border-radius-medium: 8px;
+$border-radius-large: 16px;
+
+// Shadows
+$shadow-small: '0 2px 4px rgba(0,0,0,0.1)';
+$shadow-medium: '0 4px 8px rgba(0,0,0,0.1)';
+$shadow-large: '0 8px 16px rgba(0,0,0,0.1)';
+
+// Transitions
+$transition-default: '0.3s ease';
+$transition-slow: '0.5s ease';
+$transition-fast: '0.15s ease';
+
+// Breakpoints
+$breakpoint-sm: 576px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 992px;
+$breakpoint-xl: 1200px;
+
+// Mixins
+@mixin respond-to($breakpoint) {
+  @if $breakpoint == sm {
+    @media (min-width: $breakpoint-sm) { @content; }
+  } @else if $breakpoint == md {
+    @media (min-width: $breakpoint-md) { @content; }
+  } @else if $breakpoint == lg {
+    @media (min-width: $breakpoint-lg) { @content; }
+  } @else if $breakpoint == xl {
+    @media (min-width: $breakpoint-xl) { @content; }
+  }
+}
+
+@mixin flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+@mixin grid-auto-fit($min-size: 250px) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax($min-size, 1fr));
+}

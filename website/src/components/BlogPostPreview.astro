@@ -1,0 +1,131 @@
+---
+// src/components/BlogPostPreview.astro
+import type { CollectionEntry } from 'astro:content';
+import { getImage } from 'astro:assets'; // Import getImage
+
+interface Props {
+  post: CollectionEntry<'blog'>;
+}
+
+const { post } = Astro.props;
+const { title, pubDate, description, featuredImage, tags } = post.data;
+const formattedDate = pubDate.toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+
+// Process the image using getImage() if featuredImage exists
+const optimizedImage = featuredImage
+  ? await getImage({
+      src: featuredImage, // Pass the relative path string directly
+      // Astro should resolve this relative to the content file where it's defined
+      alt: `Featured image for ${title}`,
+      width: 400,
+      // height: 250, // Optional: let aspect ratio determine height
+      format: 'webp', // Specify desired format
+      quality: 80, // Specify quality
+    })
+  : null;
+---
+
+<article class="post-preview">
+  {optimizedImage && ( // Use the processed image data
+    <a href={`/blog/${post.slug}/`} aria-label={`Read more about ${title}`}>
+      {/* Render standard img tag using src and attributes from getImage */}
+      <img src={optimizedImage.src} {...optimizedImage.attributes} />
+      {/*
+      Note: loading="lazy" is usually included in optimizedImage.attributes by default.
+      We spread the attributes object which contains width, height, alt, loading, decoding etc.
+      */}
+    </a>
+  )}
+  <h2><a href={`/blog/${post.slug}/`}>{title}</a></h2>
+  <p class="date">{formattedDate}</p>
+  {tags && tags.length > 0 && (
+    <div class="tags">
+      {tags.map(tag => (
+        <span class="tag">{tag}</span>
+        // Consider linking tags: <a href={`/blog/tags/${tag}/`} class="tag">{tag}</a>
+      ))}
+    </div>
+  )}
+  <p>{description}</p>
+  <a href={`/blog/${post.slug}/`} class="read-more">See More &rarr;</a>
+</article>
+
+<style>
+  .post-preview {
+    border: 1px solid var(--border-color, #eee); /* Use theme variable */
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    background-color: var(--card-bg-color, #fff); /* Use theme variable */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    transition: box-shadow 0.3s ease;
+  }
+  .post-preview:hover {
+     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  }
+  .post-preview img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    display: block;
+  }
+  .post-preview h2 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    font-size: 1.5rem; /* Adjust as needed */
+  }
+  .post-preview h2 a {
+    text-decoration: none;
+    color: var(--heading-color, #222); /* Darker fallback */
+  }
+   .post-preview h2 a:hover {
+    text-decoration: underline;
+  }
+  .post-preview .date {
+    color: var(--text-muted-color, #666); /* Use theme variable */
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+  }
+  .post-preview .tags {
+    margin-bottom: 1rem;
+  }
+  .post-preview .tag {
+    display: inline-block;
+    background-color: var(--accent-color-secondary, #e0e0e0); /* Use theme variable */
+    color: var(--tag-text-color, #333); /* Use theme variable */
+    padding: 0.25rem 0.75rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem; /* Added for wrapping */
+  }
+  /* Ensure description paragraph has good contrast */
+  .post-preview p:not(.date) {
+     color: var(--text-color, #333); /* Darker fallback for main text */
+     /* Inherit other paragraph styles if needed */
+  }
+  .post-preview .read-more {
+    display: inline-block;
+    margin-top: 1rem;
+    text-decoration: none;
+    font-weight: bold;
+    color: var(--accent-color, #007bff); /* Use theme variable */
+  }
+  .post-preview .read-more:hover {
+    text-decoration: underline;
+  }
+
+  /* Basic Grid/Flex Layout Suggestion (Apply on parent container in index.astro) */
+  /*
+  .post-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+  }
+  */
+</style>

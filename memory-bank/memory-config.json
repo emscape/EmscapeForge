@@ -1,0 +1,43 @@
+{
+  "activeProjects": [
+    "ProjectAlpha",
+    "emscapeForge"
+  ],
+  "completedProjects": [
+    "YourProjectName",
+    "TestProject"
+  ],
+  "archiveSettings": {
+    "autoArchiveCompleted": true,
+    "keepCompletedDays": 14,
+    "archiveOnUMB": true
+  },
+  "loadSettings": {
+    "prioritizeActive": true,
+    "maxEntriesPerFile": 50,
+    "loadCompletedProjects": false
+  },
+  "projectMetadata": {
+    "TestProject": {
+      "status": "completed",
+      "lastActivity": "2025-03-26T16:31:34Z",
+      "completionDate": "2025-03-29T18:54:37.9665252-07:00"
+    },
+    "ProjectAlpha": {
+      "status": "active",
+      "lastActivity": "2025-03-29T02:10:01.5829678-07:00"
+    },
+    "ProjectBeta": {
+      "status": "completed",
+      "completionDate": "2025-03-29T02:12:39.2272416-07:00"
+    },
+    "YourProjectName": {
+      "status": "completed",
+      "lastActivity": "2025-03-29T18:40:01.1260884-07:00"
+    },
+    "emscapeForge": {
+      "lastActivity": "2025-03-31T00:58:57.2593934-07:00",
+      "status": "active"
+    }
+  }
+}

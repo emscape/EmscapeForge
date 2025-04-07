@@ -1,0 +1,214 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+// This is a placeholder until we implement the actual components and utilities
+const presentations = [
+  {
+    slug: "introduction-to-astro",
+    title: "Introduction to Astro Framework",
+    description: "Learn the basics of the Astro framework for building fast, content-focused websites",
+    date: "2025-03-15",
+    tags: ["web development", "astro", "javascript"],
+    thumbnailImage: "/images/presentations/introduction-to-astro/thumbnail.jpg",
+    filePath: "/presentations/introduction-to-astro.pptx",
+    pdfPath: "/presentations/introduction-to-astro.pdf",
+    slideCount: 24,
+    author: "Emily",
+    featured: true
+  },
+  {
+    slug: "responsive-design-patterns",
+    title: "Modern Responsive Design Patterns",
+    description: "Explore effective patterns for creating responsive websites that work on all devices",
+    date: "2025-02-28",
+    tags: ["design", "css", "responsive"],
+    thumbnailImage: "/images/presentations/responsive-design-patterns/thumbnail.jpg",
+    filePath: "/presentations/responsive-design-patterns.pptx",
+    pdfPath: "/presentations/responsive-design-patterns.pdf",
+    slideCount: 18,
+    author: "Emily",
+    featured: false
+  }
+];
+
+export function getStaticPaths() {
+  return presentations.map(presentation => ({
+    params: { slug: presentation.slug },
+    props: { presentation }
+  }));
+}
+
+const { presentation } = Astro.props;
+
+// Encode the URL for Office Online
+const encodedSrc = encodeURIComponent(
+  // Convert relative path to absolute URL
+  presentation.filePath.startsWith('http') 
+    ? presentation.filePath 
+    : `https://emscapeforge.com${presentation.filePath}`
+);
+
+// Office Online embed URL
+const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedSrc}`;
+---
+
+<Layout title={`${presentation.title} - EmscapeForge`}>
+  <div class="presentation-page">
+    <h1>{presentation.title}</h1>
+    <p class="presentation-meta">
+      <span class="date">{new Date(presentation.date).toLocaleDateString()}</span>
+      <span class="author">by {presentation.author}</span>
+    </p>
+    
+    <div class="presentation-description">
+      <p>{presentation.description}</p>
+    </div>
+    
+    <div class="tags">
+      {presentation.tags.map(tag => (
+        <span class="tag">{tag}</span>
+      ))}
+    </div>
+    
+    <div class="presentation-viewer">
+      <div class="viewer-controls">
+        <button class="active">Interactive</button>
+        <button>PDF</button>
+        <button>Slides</button>
+      </div>
+      
+      <div class="embed-container">
+        <iframe 
+          src={officeEmbedUrl}
+          width="100%" 
+          height="600" 
+          frameborder="0" 
+          title={presentation.title}
+          allowfullscreen
+        ></iframe>
+      </div>
+    </div>
+    
+    <div class="presentation-actions">
+      <a href={presentation.filePath} download class="download-btn">
+        Download PowerPoint
+      </a>
+      <a href={presentation.pdfPath} download class="download-btn">
+        Download PDF
+      </a>
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .presentation-page {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+  
+  h1 {
+    margin-bottom: 0.5rem;
+  }
+  
+  .presentation-meta {
+    color: var(--text-secondary, #666666);
+    margin-bottom: 1.5rem;
+  }
+  
+  .presentation-meta .date, 
+  .presentation-meta .author {
+    margin-right: 1rem;
+  }
+  
+  .presentation-description {
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+    line-height: 1.6;
+  }
+  
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+  
+  .tag {
+    background: var(--tag-bg, #f0f0f0);
+    color: var(--tag-text, #333333);
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.85rem;
+  }
+  
+  .presentation-viewer {
+    margin-bottom: 2rem;
+  }
+  
+  .viewer-controls {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .viewer-controls button {
+    padding: 0.5rem 1rem;
+    border: none;
+    background: var(--button-secondary-bg, #e0e0e0);
+    color: var(--button-secondary-text, #333333);
+    border-radius: var(--border-radius-small, 4px);
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  
+  .viewer-controls button.active {
+    background: var(--button-primary-bg, #0066cc);
+    color: var(--button-primary-text, #ffffff);
+  }
+  
+  .viewer-controls button:hover {
+    background: var(--button-hover-bg, #cccccc);
+  }
+  
+  .embed-container {
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: var(--border-radius-medium, 8px);
+    overflow: hidden;
+  }
+  
+  .presentation-actions {
+    display: flex;
+    gap: 1rem;
+  }
+  
+  .download-btn {
+    display: inline-block;
+    padding: 0.75rem 1.5rem;
+    background: var(--button-primary-bg, #0066cc);
+    color: var(--button-primary-text, #ffffff);
+    text-decoration: none;
+    border-radius: var(--border-radius-small, 4px);
+    font-weight: 500;
+    transition: background 0.2s ease;
+  }
+  
+  .download-btn:hover {
+    background: var(--button-hover-bg, #0055aa);
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .viewer-controls {
+      flex-wrap: wrap;
+    }
+    
+    .embed-container iframe {
+      height: 400px;
+    }
+    
+    .presentation-actions {
+      flex-direction: column;
+    }
+  }
+</style>

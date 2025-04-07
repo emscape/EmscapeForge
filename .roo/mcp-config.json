@@ -1,0 +1,77 @@
+﻿{
+    "mcpServers":  [
+                       {
+                           "name":  "filesystem",
+                           "description":  "Access local filesystem.",
+                           "enabled":  true,
+                           "protocol":  "http",
+                           "host":  "localhost",
+                           "port":  3000,
+                           "basePath":  "/",
+                           "authentication":  {
+                                                  "type":  "none"
+                                              },
+                           "rateLimit":  {
+                                             "requests":  100,
+                                             "perSeconds":  60
+                                         },
+                           "timeoutSeconds":  30,
+                           "allowedTools":  [
+                                                "readFile",
+                                                "writeFile",
+                                                "listFiles",
+                                                "createDirectory",
+                                                "itemExists"
+                                            ]
+                       },
+                       {
+                           "name":  "git",
+                           "description":  "Interact with Git repositories.",
+                           "enabled":  true,
+                           "protocol":  "http",
+                           "host":  "localhost",
+                           "port":  3001,
+                           "basePath":  "/",
+                           "authentication":  {
+                                                  "type":  "env",
+                                                  "envVar":  "\u003cOptional: Environment variable name for PAT, e.g., GIT_PAT\u003e"
+                                              },
+                           "rateLimit":  {
+                                             "requests":  60,
+                                             "perSeconds":  60
+                                         },
+                           "timeoutSeconds":  60,
+                           "allowedTools":  [
+                                                "gitStatus",
+                                                "gitAdd",
+                                                "gitCommit",
+                                                "gitPull",
+                                                "gitLog",
+                                                "gitDiff",
+                                                "gitClone"
+                                            ]
+                       },
+                       {
+                           "name":  "brave_search",
+                           "description":  "Perform web searches using Brave Search API.",
+                           "enabled":  true,
+                           "protocol":  "https",
+                           "host":  "api.search.brave.com",
+                           "port":  443,
+                           "basePath":  "/res",
+                           "authentication":  {
+                                                  "type":  "header",
+                                                  "headerName":  "X-Subscription-Token",
+                                                  "envVar":  "\u003cSpecify Environment variable name for Brave API Key\u003e"
+                                              },
+                           "allowedTools":  [
+                                                "search"
+                                            ],
+                           "rateLimit":  {
+                                             "requests":  5,
+                                             "perSeconds":  1
+                                         },
+                           "timeoutSeconds":  15
+                       }
+                   ]
+}

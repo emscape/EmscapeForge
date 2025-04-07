@@ -1,0 +1,17 @@
+{
+  "projectMetadata": {
+    "emscapeForge": {
+      "status": "active",
+      "completionDate": null,
+      "archived": false,
+      "archivePath": null
+    }
+  },
+  "activeProjects": [
+    "emscapeForge"
+  ],
+  "completedProjects": [],
+  "archiveSettings": {
+    "keepCompletedDays": 90
+  }
+}

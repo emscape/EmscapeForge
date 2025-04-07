@@ -1,0 +1,66 @@
+---
+// src/pages/blog/index.astro
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import BlogPostPreview from '../../components/BlogPostPreview.astro';
+
+// Fetch all non-draft blog posts and sort them by date
+const posts = (await getCollection('blog', ({ data }) => {
+  return !data.draft; // Filter out drafts if the 'draft' field exists
+})).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+);
+
+const pageTitle = "Blog";
+const pageDescription = "Read the latest articles and updates from EmscapeForge.";
+---
+
+<Layout title={pageTitle} description={pageDescription}>
+  <section class="blog-index">
+    <h1>{pageTitle}</h1>
+    <p>{pageDescription}</p>
+
+    <div class="post-gallery">
+      {posts.length === 0 ? (
+        <p>No blog posts published yet. Check back soon!</p>
+      ) : (
+        posts.map(post => <BlogPostPreview post={post} />)
+      )}
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .blog-index {
+    max-width: var(--content-max-width, 900px); /* Use theme variable */
+    margin: 2rem auto;
+    padding: 0 1rem;
+  }
+
+  .blog-index h1 {
+    margin-bottom: 0.5rem;
+    color: var(--heading-color, inherit); /* Use theme variable */
+  }
+
+  .blog-index > p {
+    margin-bottom: 2.5rem;
+    color: var(--text-muted-color, #555); /* Use theme variable */
+    font-size: 1.1rem;
+  }
+
+  .post-gallery {
+    display: grid;
+    /* Creates responsive columns: minimum 300px wide, fitting as many as possible */
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem; /* Adjust gap between posts */
+  }
+
+  /* Optional: Add styles for the 'no posts' message */
+  .post-gallery > p {
+    grid-column: 1 / -1; /* Span full width if grid is active */
+    text-align: center;
+    font-style: italic;
+    color: var(--text-muted-color, #666);
+    padding: 2rem;
+  }
+</style>
