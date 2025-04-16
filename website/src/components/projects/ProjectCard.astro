@@ -1,0 +1,65 @@
+---
+import { Icon } from 'astro-icon/components'; // Using astro-icon for potential icons
+
+// Define the expected shape of the project prop
+interface Props {
+  project: {
+    id: number;
+    name: string;
+    description: string;
+    url: string;
+    language?: string; // Optional
+    stars: number;
+    forks: number;
+    pushed_at: string; // ISO 8601 date string
+    topics?: string[]; // Optional
+  };
+}
+
+const { project } = Astro.props;
+
+// Format date for display (optional, could use a library like date-fns)
+const lastUpdated = new Date(project.pushed_at).toLocaleDateString('en-US', {
+  year: 'numeric', month: 'short', day: 'numeric'
+});
+---
+<div class="flex flex-col h-full border border-gray-200 dark:border-gray-700 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden bg-white dark:bg-gray-800">
+  <div class="p-6 flex-grow">
+    <h3 class="text-xl font-semibold mb-2 text-gray-900 dark:text-white">
+      <a href={project.url} target="_blank" rel="noopener noreferrer" class="hover:text-primary-500 dark:hover:text-primary-400 transition-colors duration-200">
+        {project.name}
+      </a>
+    </h3>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mb-4 flex-grow min-h-[60px]">
+      {project.description}
+    </p>
+    {project.topics && project.topics.length > 0 && (
+      <div class="mb-4 flex flex-wrap gap-2">
+        {project.topics.map(topic => (
+          <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded-full">
+            {topic}
+          </span>
+        ))}
+      </div>
+    )}
+  </div>
+  <div class="border-t border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-800/50 text-xs text-gray-500 dark:text-gray-400 flex justify-between items-center">
+    <div class="flex items-center gap-4">
+      {project.language && (
+        <span class="flex items-center gap-1" title="Language">
+          <Icon name="mdi:code-tags" class="w-4 h-4" />
+          {project.language}
+        </span>
+      )}
+      <span class="flex items-center gap-1" title="Stars">
+        <Icon name="mdi:star-outline" class="w-4 h-4" />
+        {project.stars}
+      </span>
+      <span class="flex items-center gap-1" title="Forks">
+        <Icon name="mdi:source-fork" class="w-4 h-4" />
+        {project.forks}
+      </span>
+    </div>
+    <span title={`Last updated: ${project.pushed_at}`}>Updated {lastUpdated}</span>
+  </div>
+</div>

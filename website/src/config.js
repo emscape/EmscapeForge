@@ -16,7 +16,6 @@ export default {
   social: {
     github: 'https://github.com/emscape',
     linkedin: '#',
-    twitter: '#',
     bluesky: '#'
   },
   features: {

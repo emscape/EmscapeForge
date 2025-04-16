@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@astrojs/react": "^4.2.1",
+    "@iconify-json/mdi": "^1.2.3",
     "astro": "^5.5.4",
+    "astro-icon": "^1.1.5",
     "framer-motion": "^12.5.0",
     "gray-matter": "^4.0.3",
     "marked": "^15.0.7",

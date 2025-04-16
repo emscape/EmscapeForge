@@ -37,3 +37,18 @@ The ability to embed PowerPoint presentations will enhance the blog's functional
 2. Create a custom Markdown extension for PowerPoint embeds
 3. Add UI components for presentation display
 4. Implement responsive design for embedded presentations
+
+[2025-04-16 01:20:09] - Adding meta refresh redirect to helloemily.dev
+
+## Decision
+
+Add a meta refresh tag to the site's layout to immediately redirect all traffic from emscapeforge.com to https://helloemily.dev/.
+
+## Rationale
+
+The user wants to redirect the old domain (emscapeforge.com) to their new primary domain (helloemily.dev) as a simple solution instead of maintaining the emscapeforge site.
+
+## Implementation Details
+
+1. Added `<meta http-equiv="refresh" content="0; url=https://helloemily.dev/" />` to the `<head>` section of `website/src/layouts/Layout.astro`.
+2. This change will take effect after the next site build and deployment.
