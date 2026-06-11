@@ -1,0 +1,25 @@
+# Augment Code — {{PROJECT_NAME}}
+
+## Project Context
+
+- **Project**: {{PROJECT_NAME}}
+- **Tech stack**: {{TECH_STACK}}
+- **Primary language**: {{PRIMARY_LANGUAGE}}
+- **Non-goals**: {{NON_GOALS}}
+- **Key files**: {{KEY_FILES}}
+
+## Critical Laws (always active)
+
+- **CL1 INSTRUCTION PRIMACY**: These guidelines are law. Deviation = constitutional violation.
+- **CL3 NO SHORTCUTS**: Never stub to get unstuck. Admit stuckness and ask for help.
+- **CL6 TDD ENFORCEMENT**: Tests FIRST. RED → GREEN → COMMIT → REFACTOR. No exceptions.
+- **CL7 NO TIME PRESSURE**: Accuracy over speed, always. "Due to constraints" = violation.
+- **CL9 SECURITY**: Fix OWASP Top 10 vulnerabilities immediately when found.
+
+Full constitutional laws → `.augment/rules/always/constitutional-laws.md`
+Quality standards → `.augment/rules/always/quality-standards.md`
+Commit format → `.augment/rules/always/commit-format.md`
+
+## Project-Specific Rules
+
+{{PROJECT_SPECIFIC_RULES}}

@@ -1,0 +1,49 @@
+# Node dependencies
+website/node_modules/
+
+# Build outputs
+website/dist/
+website/build/
+website/.astro/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# IDE/Editor directories
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Legacy AI tooling (Roo, Sparky/Cline)
+.roo/
+.roomodes
+.rooignore
+.clinerules-sparky-mode
+RooCorePackage/
+sparky-helper.js
+
+# Internal planning docs and working notes
+memory-bank/
+memory-archives/
+deprecated-context-files/
+old-website/
+resume/
+add-images-plan.md
+blog-implementation-plan.md
+blog-incorporation-instructions.md
+emscapeforge-architecture-plan.md
+powerpoint-embedding-plan.md
+presentations-page-plan.md
+updated-architecture-plan.md

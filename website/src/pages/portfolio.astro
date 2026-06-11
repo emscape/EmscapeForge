@@ -1,0 +1,367 @@
+---
+import Layout from '../layouts/Layout.astro';
+import config from '../config';
+
+const websites = [
+  {
+    title: 'HellmouthCon',
+    url: 'https://gotohellmouth.org',
+    description: 'Official site for HellmouthCon, a Buffy the Vampire Slayer fan convention organized by Fandom Charities. Features ticketing integration, a full event schedule, venue map, and a personal schedule tool for attendees.',
+    tags: ['Event', 'Ticketing', 'Fan Convention']
+  },
+  {
+    title: 'Sean Cameron — Author Site',
+    url: 'https://sean-cameron.com',
+    description: 'Author website for Sean Cameron, showcasing his Rex & Eddie comedy-mystery series with book listings, series information, and reader resources.',
+    tags: ['Author', 'Books', 'Personal Brand']
+  },
+  {
+    title: 'The Dapper Foxes',
+    url: 'https://thedapperfoxes.com',
+    description: 'A personal wedding website with narrative storytelling, RSVP collection, location polling, photo sharing, and registry links — built for a specific moment, designed to last.',
+    tags: ['Personal', 'Wedding', 'Interactive']
+  },
+  {
+    title: 'HelloEmily.dev',
+    url: 'https://helloemily.dev',
+    description: 'Personal site and online home for Emily — a showcase of personality, projects, and professional presence.',
+    tags: ['Personal', 'Portfolio']
+  }
+];
+
+const books = [
+  {
+    title: 'Catchee Monkey',
+    author: 'Sean Cameron',
+    series: 'Rex & Eddie Mysteries #1',
+    genre: 'Comedy-Mystery',
+    url: 'https://sean-cameron.com/books',
+    description: 'A daft noir blending classic pulp detective fiction with British humor. Two inexperienced detectives navigate murder, gangsters, and assassins.'
+  },
+  {
+    title: 'Rebels Without a Claus',
+    author: 'Sean Cameron',
+    series: 'Rex & Eddie #1.5',
+    genre: 'Holiday Comedy-Caper',
+    url: 'https://sean-cameron.com/books',
+    description: 'A festive short story featuring Rex and Eddie in a holiday-themed adventure with sharp wit and comedic action.'
+  },
+  {
+    title: 'Feline Fatale',
+    author: 'Sean Cameron',
+    series: 'Rex & Eddie #2',
+    genre: 'Comedy-Mystery',
+    url: 'https://sean-cameron.com/books',
+    description: 'Rex and Eddie search for a missing cat, encountering stalkers, nosy neighbors, and ownership disputes in a madcap romp.'
+  },
+  {
+    title: 'The Office Spy',
+    author: 'Sean Cameron',
+    series: 'Rex & Eddie #3',
+    genre: 'Comedy-Mystery',
+    url: 'https://sean-cameron.com/books',
+    description: 'Undercover as pest exterminators, the detectives hunt a corporate spy while entangled in office politics and workplace theft.'
+  },
+  {
+    title: 'The Third Banana',
+    author: 'Sean Cameron',
+    series: 'Rex & Eddie #4',
+    genre: 'Comedy-Thriller',
+    url: 'https://sean-cameron.com/books',
+    description: 'Rex and Eddie compete with a professional private eye while investigating a kidnapping and confronting drug dealers.'
+  },
+  {
+    title: 'When It Rains',
+    author: 'Sean Cameron',
+    series: 'Rex & Eddie #5',
+    genre: 'Comedy-Mystery',
+    url: 'https://sean-cameron.com/books',
+    description: 'The detectives protect a weather reporter from a stalker, encountering suspects ranging from meteorologists to conspiracy theorists.'
+  },
+  {
+    title: 'Alligator Heretics',
+    author: 'Joshua Sobel',
+    series: null,
+    genre: 'Coming-of-Age Fiction',
+    url: 'https://www.alligatorheretics.com',
+    description: 'A coming-of-age novel about an autistic high schooler and his friends seeking answers when a classmate vanishes, with findings that challenge their deepest beliefs about faith and community.'
+  }
+];
+---
+
+<Layout
+  title={`Portfolio — ${config.site.title}`}
+  description="Web development projects and editorial work by Emily at EmscapeForge."
+>
+  <div class="portfolio-page">
+    <div class="container">
+      <header class="page-header">
+        <h1>Portfolio</h1>
+        <p class="page-intro">A selection of websites I've built and books I've edited.</p>
+      </header>
+
+      <!-- Websites -->
+      <section class="portfolio-section" id="websites">
+        <h2 class="section-title">Websites</h2>
+        <div class="websites-grid">
+          {websites.map(site => (
+            <a href={site.url} class="site-card" target="_blank" rel="noopener noreferrer">
+              <div class="site-card-body">
+                <h3>{site.title}</h3>
+                <p>{site.description}</p>
+              </div>
+              <div class="site-card-footer">
+                <div class="tags">
+                  {site.tags.map(tag => <span class="tag">{tag}</span>)}
+                </div>
+                <span class="visit-link">Visit →</span>
+              </div>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <hr class="section-divider" />
+
+      <!-- Editorial -->
+      <section class="portfolio-section" id="editorial">
+        <h2 class="section-title">Editorial Work</h2>
+        <p class="section-intro">Copyediting and proofreading credits.</p>
+        <div class="books-grid">
+          {books.map(book => (
+            <a href={book.url} class="book-card" target="_blank" rel="noopener noreferrer">
+              <div class="book-meta">
+                <span class="book-genre">{book.genre}</span>
+                {book.series && <span class="book-series">{book.series}</span>}
+              </div>
+              <h3 class="book-title">{book.title}</h3>
+              <p class="book-author">by {book.author}</p>
+              <p class="book-description">{book.description}</p>
+            </a>
+          ))}
+        </div>
+      </section>
+
+    </div>
+  </div>
+</Layout>
+
+<style lang="scss">
+  .portfolio-page {
+    padding: 3rem 0 5rem;
+  }
+
+  .page-header {
+    margin-bottom: 4rem;
+
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+  }
+
+  .page-intro {
+    font-size: 1.2rem;
+    opacity: 0.8;
+    max-width: 640px;
+    line-height: 1.6;
+  }
+
+  .portfolio-section {
+    padding: 2.5rem 0;
+  }
+
+  .section-title {
+    font-size: 2rem;
+    margin-bottom: 0.75rem;
+    position: relative;
+    display: inline-block;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -0.5rem;
+      left: 0;
+      width: 50px;
+      height: 3px;
+      background-color: var(--color-primary);
+    }
+  }
+
+  .section-intro {
+    font-size: 1rem;
+    opacity: 0.7;
+    margin-top: 1.25rem;
+    margin-bottom: 2rem;
+  }
+
+  /* Websites */
+  .websites-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+    margin-top: 2rem;
+
+    @media (max-width: 768px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .site-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 1.75rem;
+    border-radius: var(--border-radius-large);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    text-decoration: none;
+    color: var(--color-text);
+    transition: transform var(--transition-default), box-shadow var(--transition-default), border-color var(--transition-default);
+
+    .dark-mode & {
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    &:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-medium);
+      border-color: var(--color-primary);
+    }
+
+    h3 {
+      font-size: 1.2rem;
+      margin-bottom: 0.6rem;
+    }
+
+    p {
+      font-size: 0.95rem;
+      line-height: 1.6;
+      opacity: 0.75;
+      margin: 0;
+    }
+  }
+
+  .site-card-body {
+    margin-bottom: 1.25rem;
+  }
+
+  .site-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .tag {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--color-text);
+    opacity: 0.8;
+
+    .dark-mode & {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+  }
+
+  .visit-link {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    white-space: nowrap;
+  }
+
+  /* Books */
+  .books-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+
+    @media (max-width: 900px) {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    @media (max-width: 600px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .book-card {
+    padding: 1.5rem;
+    border-radius: var(--border-radius-large);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    text-decoration: none;
+    color: var(--color-text);
+    transition: transform var(--transition-default), box-shadow var(--transition-default), border-color var(--transition-default);
+
+    .dark-mode & {
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    &:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-medium);
+      border-color: var(--color-primary);
+    }
+  }
+
+  .book-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .book-genre,
+  .book-series {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+  }
+
+  .book-series {
+    color: var(--color-text);
+    opacity: 0.5;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .book-title {
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .book-author {
+    font-size: 0.9rem;
+    opacity: 0.6;
+    margin-bottom: 0.75rem;
+  }
+
+  .book-description {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    opacity: 0.75;
+    margin: 0;
+  }
+
+  .section-divider {
+    border: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    margin: 0;
+
+    .dark-mode & {
+      border-top-color: rgba(255, 255, 255, 0.08);
+    }
+  }
+</style>

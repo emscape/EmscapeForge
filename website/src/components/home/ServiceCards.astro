@@ -1,0 +1,123 @@
+---
+const services = [
+  {
+    icon: '⬡',
+    title: 'Web Development',
+    description: 'Custom websites built for authors, events, businesses, and personal projects — clean, fast, and built to your needs.',
+    link: '/services#web-development'
+  },
+  {
+    icon: '⬡',
+    title: 'Technical Writing',
+    description: 'Documentation, guides, and technical content that bridges the gap between complex systems and the people who use them.',
+    link: '/services#technical-writing'
+  },
+  {
+    icon: '⬡',
+    title: 'Copyediting & Proofreading',
+    description: 'Careful, thorough editorial work for enterprise content teams and self-published authors — fiction and non-fiction.',
+    link: '/services#copyediting'
+  }
+];
+---
+
+<section class="services-section">
+  <div class="container">
+    <h2 class="section-title">What I Do</h2>
+    <div class="services-grid">
+      {services.map(service => (
+        <a href={service.link} class="service-card">
+          <div class="card-icon">{service.icon}</div>
+          <h3 class="card-title">{service.title}</h3>
+          <p class="card-description">{service.description}</p>
+          <span class="card-cta">Learn more →</span>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style lang="scss">
+  .services-section {
+    padding: 4rem 0;
+    background-color: rgba(0, 0, 0, 0.02);
+
+    .dark-mode & {
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+  }
+
+  .section-title {
+    font-size: 2rem;
+    margin-bottom: 2.5rem;
+    position: relative;
+    display: inline-block;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -0.5rem;
+      left: 0;
+      width: 50px;
+      height: 3px;
+      background-color: var(--color-primary);
+    }
+  }
+
+  .services-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+
+    @media (max-width: 900px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .service-card {
+    display: flex;
+    flex-direction: column;
+    padding: 2rem;
+    border-radius: var(--border-radius-large);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    background-color: var(--color-background);
+    text-decoration: none;
+    color: var(--color-text);
+    transition: transform var(--transition-default), box-shadow var(--transition-default), border-color var(--transition-default);
+
+    .dark-mode & {
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    &:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-large);
+      border-color: var(--color-primary);
+    }
+  }
+
+  .card-icon {
+    font-size: 1.75rem;
+    color: var(--color-primary);
+    margin-bottom: 1rem;
+  }
+
+  .card-title {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .card-description {
+    font-size: 1rem;
+    line-height: 1.6;
+    opacity: 0.8;
+    flex-grow: 1;
+    margin-bottom: 1.5rem;
+  }
+
+  .card-cta {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-primary);
+  }
+</style>

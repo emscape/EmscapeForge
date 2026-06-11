@@ -1,0 +1,45 @@
+---
+// src/pages/blog/[...slug].astro
+import { type CollectionEntry, getCollection } from 'astro:content';
+import BlogPostLayout from '../../layouts/BlogPostLayout.astro';
+// Import social sharing components if using a library, or define helper functions
+
+// Generate static paths for all blog posts
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft); // Fetch non-draft posts
+  return posts.map((post) => ({
+    params: { slug: post.slug },
+    props: { post }, // Pass the full post object as props
+  }));
+}
+
+// Type definition for the props passed from getStaticPaths
+interface Props {
+  post: CollectionEntry<'blog'>;
+}
+
+const { post } = Astro.props;
+const { Content } = await post.render(); // Get the component to render MD/MDX content
+---
+
+<BlogPostLayout frontmatter={post.data}>
+  {/* Render the actual blog post content */}
+  <Content />
+
+  {/*
+    Future Integration Point:
+    If a custom Markdown extension for PowerPoint is created,
+    it would likely be processed during the post.render() step above,
+    and the <Content /> component would render the output.
+    Alternatively, specific components could be injected here based on frontmatter.
+  */}
+
+  {/* Basic Social Sharing Placeholder - Replace with actual implementation */}
+  <div class="social-sharing-section" style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #eee;">
+    <h4>Share this post:</h4>
+    <a href={`https://twitter.com/intent/tweet?url=${Astro.url.href}&text=${encodeURIComponent(post.data.title)}`} target="_blank" rel="noopener noreferrer">Twitter</a> |
+    <a href={`https://www.linkedin.com/sharing/share-offsite/?url=${Astro.url.href}`} target="_blank" rel="noopener noreferrer">LinkedIn</a> |
+    <a href={`https://www.facebook.com/sharer/sharer.php?u=${Astro.url.href}`} target="_blank" rel="noopener noreferrer">Facebook</a>
+    {/* Add more services as needed */}
+  </div>
+</BlogPostLayout>

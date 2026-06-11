@@ -1,0 +1,188 @@
+---
+// This is a placeholder component for featured projects
+// In the future, this will fetch data from the GitHub API
+import config from '../../config';
+import { getLanguageColor } from '../../utils/colors.js';
+
+// Mock data for now
+const featuredProjects = [
+  {
+    name: "EmscapeForge",
+    description: "Personal website built with Astro, featuring projects, blog posts, and presentations",
+    language: "JavaScript",
+    url: "https://github.com/emscape/EmscapeForge",
+    updatedAt: "2025-03-23",
+    stars: 5,
+    forks: 2
+  },
+  {
+    name: "Project Two",
+    description: "A sample project to demonstrate the projects section",
+    language: "TypeScript",
+    url: "#",
+    updatedAt: "2025-03-15",
+    stars: 12,
+    forks: 3
+  },
+  {
+    name: "Project Three",
+    description: "Another sample project with a slightly longer description to test wrapping",
+    language: "Python",
+    url: "#",
+    updatedAt: "2025-03-10",
+    stars: 8,
+    forks: 1
+  }
+];
+---
+
+<section class="featured-projects">
+  <div class="container">
+    <div class="section-header">
+      <h2>Featured Projects</h2>
+      <a href="/projects" class="view-all">View All Projects</a>
+    </div>
+    
+    <div class="projects-grid">
+      {featuredProjects.map(project => (
+        <div class="project-card">
+          <h3 class="project-title">
+            <a href={project.url} target="_blank" rel="noopener noreferrer">{project.name}</a>
+          </h3>
+          <p class="project-description">{project.description}</p>
+          <div class="project-meta">
+            <span class="language">
+              <span class="language-dot" style={`background-color: ${getLanguageColor(project.language)}`}></span>
+              {project.language}
+            </span>
+            <span class="stars">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+              {project.stars}
+            </span>
+            <span class="forks">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="6" y1="3" x2="6" y2="15"></line>
+                <circle cx="18" cy="6" r="3"></circle>
+                <circle cx="6" cy="18" r="3"></circle>
+                <path d="M18 9a9 9 0 0 1-9 9"></path>
+              </svg>
+              {project.forks}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style lang="scss">
+  .featured-projects {
+    padding: 4rem 0;
+  }
+  
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    
+    h2 {
+      font-size: 2rem;
+      margin: 0;
+    }
+    
+    .view-all {
+      font-weight: 500;
+      
+      &::after {
+        content: ' →';
+        transition: transform var(--transition-fast);
+        display: inline-block;
+      }
+      
+      &:hover::after {
+        transform: translateX(4px);
+      }
+    }
+  }
+  
+  .projects-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+  }
+  
+  .project-card {
+    background-color: var(--card-bg);
+    border-radius: var(--border-radius-medium);
+    padding: 1.5rem;
+    border: var(--card-border);
+    transition: transform var(--transition-default), box-shadow var(--transition-default);
+    
+    &:hover {
+      transform: translateY(-5px);
+      box-shadow: var(--shadow-medium);
+    }
+  }
+  
+  .project-title {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    font-size: 1.25rem;
+    
+    a {
+      color: var(--color-text);
+      text-decoration: none;
+      
+      &:hover {
+        color: var(--color-primary);
+      }
+    }
+  }
+  
+  .project-description {
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--color-text);
+    opacity: 0.8;
+  }
+  
+  .project-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.85rem;
+    color: var(--color-text);
+    opacity: 0.7;
+    
+    span {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    
+    .language-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    
+    svg {
+      opacity: 0.8;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .section-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    
+    .projects-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

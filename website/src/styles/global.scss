@@ -1,0 +1,172 @@
+// Import theme variables and component styles
+@import 'variables';
+@import 'navigation';
+@import 'presentations';
+
+// Reset and base styles
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+:root {
+  // Light mode variables
+  --color-primary: #{$color-primary-light};
+  --color-secondary: #{$color-secondary-light};
+  --color-accent: #{$color-accent-light};
+  --color-background: #{$color-background-light};
+  --color-text: #{$color-text-light};
+  
+  --font-body: #{$font-body};
+  --font-heading: #{$font-heading};
+  
+  --border-radius-small: #{$border-radius-small};
+  --border-radius-medium: #{$border-radius-medium};
+  --border-radius-large: #{$border-radius-large};
+  
+  --shadow-small: #{$shadow-small};
+  --shadow-medium: #{$shadow-medium};
+  --shadow-large: #{$shadow-large};
+  
+  --transition-default: #{$transition-default};
+  --transition-slow: #{$transition-slow};
+  --transition-fast: #{$transition-fast};
+  
+  // Component-specific variables
+  --header-height: 70px;
+  --footer-height: 100px;
+  
+  // Button styles
+  --button-primary-bg: var(--color-primary);
+  --button-primary-text: white;
+  --button-secondary-bg: #f0f0f0;
+  --button-secondary-text: var(--color-text);
+  --button-hover-bg: var(--color-secondary);
+  
+  // Card styles
+  --card-bg: white;
+  --card-border: 1px solid #eaeaea;
+  
+  // Tag styles
+  --tag-bg: #f0f0f0;
+  --tag-text: var(--color-text);
+}
+
+// Dark mode
+.dark-mode {
+  --color-primary: #{$color-primary-dark};
+  --color-secondary: #{$color-secondary-dark};
+  --color-accent: #{$color-accent-dark};
+  --color-background: #{$color-background-dark};
+  --color-text: #{$color-text-dark};
+  
+  --button-secondary-bg: #2a2a2a;
+  --button-secondary-text: #f0f0f0;
+  --button-hover-bg: var(--color-secondary);
+  
+  --card-bg: #1e1e1e;
+  --card-border: 1px solid #333;
+  
+  --tag-bg: #2a2a2a;
+  --tag-text: #f0f0f0;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-body);
+  background-color: var(--color-background);
+  color: var(--color-text);
+  line-height: 1.6;
+  transition: background-color var(--transition-default), color var(--transition-default);
+}
+
+.site-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+main {
+  flex: 1;
+  padding-top: var(--header-height);
+  padding-bottom: 2rem;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  margin-top: 0;
+  line-height: 1.2;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+  
+  &:hover {
+    color: var(--color-secondary);
+  }
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+// Container widths
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+// Utility classes
+.text-center {
+  text-align: center;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+// Responsive breakpoints
+@media (max-width: 768px) {
+  :root {
+    --header-height: 60px;
+  }
+}
+
+// Animation classes
+.fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+// Celtic/Nordic design accents
+.celtic-border {
+  position: relative;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 8px;
+    background-image: url('/images/celtic-border.svg');
+    background-repeat: repeat-x;
+  }
+}

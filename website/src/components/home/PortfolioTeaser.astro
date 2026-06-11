@@ -1,0 +1,132 @@
+---
+const items = [
+  {
+    category: 'Web',
+    title: 'HellmouthCon',
+    description: 'Official site for a Buffy the Vampire Slayer fan convention — ticketing, schedule, venue map, and personal schedule tool.',
+    url: 'https://gotohellmouth.org'
+  },
+  {
+    category: 'Web',
+    title: 'Sean Cameron — Author Site',
+    description: 'Author website for a comedy-mystery novelist, showcasing the Rex & Eddie series.',
+    url: 'https://sean-cameron.com'
+  },
+  {
+    category: 'Editorial',
+    title: 'Rex & Eddie Mysteries',
+    description: 'Copyedited all six entries in Sean Cameron\'s daft-noir comedy-mystery series.',
+    url: '/portfolio#editorial'
+  }
+];
+---
+
+<section class="teaser-section">
+  <div class="container">
+    <div class="teaser-header">
+      <h2 class="section-title">Recent Work</h2>
+      <a href="/portfolio" class="view-all">View all →</a>
+    </div>
+    <div class="teaser-grid">
+      {items.map(item => (
+        <a href={item.url} class="teaser-card" target={item.url.startsWith('http') ? '_blank' : undefined} rel={item.url.startsWith('http') ? 'noopener noreferrer' : undefined}>
+          <span class="item-category">{item.category}</span>
+          <h3 class="item-title">{item.title}</h3>
+          <p class="item-description">{item.description}</p>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style lang="scss">
+  .teaser-section {
+    padding: 4rem 0;
+  }
+
+  .teaser-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 2.5rem;
+  }
+
+  .section-title {
+    font-size: 2rem;
+    margin: 0;
+    position: relative;
+    display: inline-block;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -0.5rem;
+      left: 0;
+      width: 50px;
+      height: 3px;
+      background-color: var(--color-primary);
+    }
+  }
+
+  .view-all {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .teaser-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+
+    @media (max-width: 900px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .teaser-card {
+    padding: 1.75rem;
+    border-radius: var(--border-radius-large);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    text-decoration: none;
+    color: var(--color-text);
+    transition: transform var(--transition-default), box-shadow var(--transition-default), border-color var(--transition-default);
+
+    .dark-mode & {
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    &:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-medium);
+      border-color: var(--color-primary);
+    }
+  }
+
+  .item-category {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+    margin-bottom: 0.6rem;
+  }
+
+  .item-title {
+    font-size: 1.15rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .item-description {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    opacity: 0.75;
+    margin: 0;
+  }
+</style>

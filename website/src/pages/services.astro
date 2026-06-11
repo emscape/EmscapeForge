@@ -1,0 +1,322 @@
+---
+import Layout from '../layouts/Layout.astro';
+import config from '../config';
+---
+
+<Layout
+  title={`Services — ${config.site.title}`}
+  description="Web development, technical writing, and copyediting & proofreading services."
+>
+  <div class="services-page">
+    <div class="container">
+      <header class="page-header">
+        <h1>Services</h1>
+        <p class="page-intro">
+          I work with businesses, authors, and organizations who need sharp execution and clear communication.
+          Here's how I can help.
+        </p>
+      </header>
+
+      <!-- Web Development -->
+      <section class="service-section" id="web-development">
+        <div class="service-header">
+          <h2>Web Development</h2>
+        </div>
+        <div class="service-body">
+          <div class="service-description">
+            <p>
+              Custom websites designed and built from scratch — or rebuilt from a tired, outdated presence into
+              something that actually works. I build for authors, fan communities, small businesses, event organizers,
+              and anyone who needs a web presence that reflects who they are and what they do.
+            </p>
+            <p>
+              Every project is different, but the goal is always the same: a site that's fast, accessible,
+              easy to maintain, and genuinely useful to the people who visit it.
+            </p>
+            <h3>What's included</h3>
+            <ul>
+              <li>Custom design and development</li>
+              <li>Mobile-responsive layout</li>
+              <li>Light/dark mode support</li>
+              <li>Content management setup</li>
+              <li>Ticketing, scheduling, and interactive features as needed</li>
+              <li>Deployment and domain configuration</li>
+            </ul>
+          </div>
+          <div class="service-sidebar">
+            <div class="sidebar-card">
+              <h4>Good fit for</h4>
+              <ul>
+                <li>Authors and creatives</li>
+                <li>Fan conventions and events</li>
+                <li>Small businesses and nonprofits</li>
+                <li>Wedding and personal sites</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <hr class="section-divider" />
+
+      <!-- Technical Writing -->
+      <section class="service-section" id="technical-writing">
+        <div class="service-header">
+          <h2>Technical Writing & Documentation</h2>
+        </div>
+        <div class="service-body">
+          <div class="service-description">
+            <p>
+              Technical content that people can actually use. With over a decade of experience in enterprise
+              software, AI research, and application development, I write documentation that bridges the gap
+              between complex systems and the humans who work with them.
+            </p>
+            <p>
+              Whether you're documenting an internal process, shipping a product, or building a knowledge base
+              from scratch, I can take the expertise out of people's heads and put it somewhere useful.
+            </p>
+            <h3>What's included</h3>
+            <ul>
+              <li>User guides and how-to documentation</li>
+              <li>API and developer documentation</li>
+              <li>Process documentation and SOPs</li>
+              <li>Training materials and curriculum</li>
+              <li>Enterprise architecture and business analysis artifacts</li>
+            </ul>
+          </div>
+          <div class="service-sidebar">
+            <div class="sidebar-card">
+              <h4>Good fit for</h4>
+              <ul>
+                <li>Enterprise software teams</li>
+                <li>Healthcare and regulated industries</li>
+                <li>AI and emerging tech products</li>
+                <li>Teams without a dedicated technical writer</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <hr class="section-divider" />
+
+      <!-- Copyediting & Proofreading -->
+      <section class="service-section" id="copyediting">
+        <div class="service-header">
+          <h2>Copyediting & Proofreading</h2>
+        </div>
+        <div class="service-body">
+          <div class="service-description">
+            <p>
+              Clean, careful editing that respects the author's voice while making the work as strong as it
+              can be. I've edited comedy-mystery novels, coming-of-age fiction, and enterprise content — and
+              I bring the same attention to detail to all of it.
+            </p>
+            <p>
+              For self-published authors, I'm a collaborator who takes your work seriously. For enterprises,
+              I'm a second set of expert eyes that catches what spell-check misses.
+            </p>
+            <h3>What's included</h3>
+            <ul>
+              <li>Line-level copyediting (grammar, style, consistency, flow)</li>
+              <li>Proofreading (final-pass error correction)</li>
+              <li>Style guide application or development</li>
+              <li>Continuity checking for fiction</li>
+              <li>Feedback on clarity and readability</li>
+            </ul>
+          </div>
+          <div class="service-sidebar">
+            <div class="sidebar-card">
+              <h4>Good fit for</h4>
+              <ul>
+                <li>Self-published authors (fiction and non-fiction)</li>
+                <li>Enterprise content and communications teams</li>
+                <li>Marketing and product copy</li>
+                <li>Long-form web content</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="page-cta">
+        <h2>Let's work together</h2>
+        <p>Not sure which service fits your project? Just reach out — I'm happy to talk it through.</p>
+        <a href="/contact" class="button primary">Get in Touch</a>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<style lang="scss">
+  .services-page {
+    padding: 3rem 0 5rem;
+  }
+
+  .page-header {
+    margin-bottom: 4rem;
+
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+  }
+
+  .page-intro {
+    font-size: 1.2rem;
+    opacity: 0.8;
+    max-width: 640px;
+    line-height: 1.6;
+  }
+
+  .service-section {
+    padding: 3rem 0;
+  }
+
+  .service-header h2 {
+    font-size: 2rem;
+    margin-bottom: 1.75rem;
+    position: relative;
+    display: inline-block;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -0.5rem;
+      left: 0;
+      width: 50px;
+      height: 3px;
+      background-color: var(--color-primary);
+    }
+  }
+
+  .service-body {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 3rem;
+    align-items: start;
+
+    @media (max-width: 768px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .service-description {
+    p {
+      font-size: 1.05rem;
+      line-height: 1.7;
+      margin-bottom: 1.25rem;
+    }
+
+    h3 {
+      font-size: 1.1rem;
+      margin: 1.75rem 0 0.75rem;
+      color: var(--color-primary);
+    }
+
+    ul {
+      padding-left: 1.25rem;
+      margin: 0;
+
+      li {
+        font-size: 1rem;
+        line-height: 1.6;
+        margin-bottom: 0.4rem;
+      }
+    }
+  }
+
+  .sidebar-card {
+    padding: 1.5rem;
+    border-radius: var(--border-radius-large);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    background-color: rgba(0, 0, 0, 0.01);
+
+    .dark-mode & {
+      border-color: rgba(255, 255, 255, 0.08);
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    h4 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--color-primary);
+      margin-bottom: 0.75rem;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+
+      li {
+        font-size: 0.95rem;
+        padding: 0.35rem 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        line-height: 1.5;
+
+        .dark-mode & {
+          border-bottom-color: rgba(255, 255, 255, 0.05);
+        }
+
+        &:last-child {
+          border-bottom: none;
+        }
+      }
+    }
+  }
+
+  .section-divider {
+    border: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    margin: 0;
+
+    .dark-mode & {
+      border-top-color: rgba(255, 255, 255, 0.08);
+    }
+  }
+
+  .page-cta {
+    margin-top: 4rem;
+    padding: 3rem;
+    text-align: center;
+    background-color: rgba(0, 0, 0, 0.02);
+    border-radius: var(--border-radius-large);
+
+    .dark-mode & {
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    h2 {
+      font-size: 1.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    p {
+      font-size: 1.05rem;
+      opacity: 0.8;
+      margin-bottom: 1.75rem;
+    }
+
+    .button {
+      display: inline-block;
+      padding: 0.85rem 2rem;
+      border-radius: var(--border-radius-medium);
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-medium);
+      }
+
+      &.primary {
+        background-color: var(--color-primary);
+        color: white;
+      }
+    }
+  }
+</style>

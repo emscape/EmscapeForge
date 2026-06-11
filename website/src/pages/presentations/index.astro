@@ -1,0 +1,196 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { useState } from 'react';
+
+// This is a placeholder until we implement the actual components and utilities
+const presentations = [
+  {
+    slug: "introduction-to-astro",
+    title: "Introduction to Astro Framework",
+    description: "Learn the basics of the Astro framework for building fast, content-focused websites",
+    date: "2025-03-15",
+    tags: ["web development", "astro", "javascript"],
+    thumbnailImage: "/images/presentations/introduction-to-astro/thumbnail.jpg",
+    filePath: "/presentations/introduction-to-astro.pptx",
+    pdfPath: "/presentations/introduction-to-astro.pdf",
+    slideCount: 24,
+    author: "Emily",
+    featured: true
+  },
+  {
+    slug: "responsive-design-patterns",
+    title: "Modern Responsive Design Patterns",
+    description: "Explore effective patterns for creating responsive websites that work on all devices",
+    date: "2025-02-28",
+    tags: ["design", "css", "responsive"],
+    thumbnailImage: "/images/presentations/responsive-design-patterns/thumbnail.jpg",
+    filePath: "/presentations/responsive-design-patterns.pptx",
+    pdfPath: "/presentations/responsive-design-patterns.pdf",
+    slideCount: 18,
+    author: "Emily",
+    featured: false
+  }
+];
+
+const featuredPresentations = presentations.filter(p => p.featured);
+---
+
+<Layout title="Presentations - EmscapeForge">
+  <div class="presentations-container">
+    <h1>Presentations</h1>
+    
+    {featuredPresentations.length > 0 && (
+      <section class="featured-presentations">
+        <h2>Featured Presentations</h2>
+        <div class="presentations-list featured">
+          {featuredPresentations.map(presentation => (
+            <div class="presentation-card featured">
+              <a href={`/presentations/${presentation.slug}`}>
+                <div class="thumbnail">
+                  <img 
+                    src={presentation.thumbnailImage} 
+                    alt={`Thumbnail for ${presentation.title}`} 
+                  />
+                  <div class="slide-count">{presentation.slideCount} slides</div>
+                </div>
+                
+                <div class="card-content">
+                  <h3>{presentation.title}</h3>
+                  <p class="date">{new Date(presentation.date).toLocaleDateString()}</p>
+                  <p class="description">{presentation.description}</p>
+                </div>
+              </a>
+            </div>
+          ))}
+        </div>
+      </section>
+    )}
+    
+    <section class="all-presentations">
+      <h2>All Presentations</h2>
+      <div class="presentations-list grid">
+        {presentations.map(presentation => (
+          <div class="presentation-card">
+            <a href={`/presentations/${presentation.slug}`}>
+              <div class="thumbnail">
+                <img 
+                  src={presentation.thumbnailImage} 
+                  alt={`Thumbnail for ${presentation.title}`} 
+                />
+                <div class="slide-count">{presentation.slideCount} slides</div>
+              </div>
+              
+              <div class="card-content">
+                <h3>{presentation.title}</h3>
+                <p class="date">{new Date(presentation.date).toLocaleDateString()}</p>
+                <p class="description">{presentation.description}</p>
+              </div>
+            </a>
+          </div>
+        ))}
+      </div>
+    </section>
+  </div>
+</Layout>
+
+<style>
+  /* Basic styling for the presentations page */
+  .presentations-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+  
+  h1 {
+    margin-bottom: 2rem;
+    font-size: 2.5rem;
+  }
+  
+  section {
+    margin-bottom: 3rem;
+  }
+  
+  .presentations-list {
+    display: grid;
+    gap: 2rem;
+  }
+  
+  .presentations-list.grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+  
+  .presentations-list.featured {
+    grid-template-columns: 1fr;
+  }
+  
+  .presentation-card {
+    border-radius: var(--border-radius-medium, 8px);
+    overflow: hidden;
+    box-shadow: var(--shadow-medium, 0 4px 6px rgba(0,0,0,0.1));
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    background: var(--card-bg, #ffffff);
+  }
+  
+  .presentation-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-large, 0 10px 15px rgba(0,0,0,0.1));
+  }
+  
+  .presentation-card.featured {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 2rem;
+  }
+  
+  .thumbnail {
+    position: relative;
+    aspect-ratio: 16/9;
+    overflow: hidden;
+  }
+  
+  .thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+  
+  .slide-count {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+  
+  .card-content {
+    padding: 1.5rem;
+  }
+  
+  .card-content h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.25rem;
+  }
+  
+  .card-content .date {
+    color: var(--text-secondary, #666666);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+  }
+  
+  .card-content .description {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--text-primary, #333333);
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .presentation-card.featured {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
