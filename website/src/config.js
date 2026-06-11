@@ -18,6 +18,9 @@ export default {
     linkedin: '#',
     bluesky: '#'
   },
+  contact: {
+    web3formsKey: '4c46c461-bd09-40ff-b5be-003327cd374e'
+  },
   features: {
     darkMode: true,
     animations: true,

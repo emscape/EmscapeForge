@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import config from '../config';
+const web3formsKey = config.contact.web3formsKey;
 ---
 
 <Layout
@@ -19,7 +20,11 @@ import config from '../config';
 
       <div class="contact-layout">
         <div class="contact-form-wrapper">
-          <form class="contact-form" name="contact" method="POST" data-netlify="true" action="/contact-success">
+          <form class="contact-form" id="contact-form" method="POST" action="https://api.web3forms.com/submit">
+            <input type="hidden" name="access_key" value={web3formsKey} />
+            <input type="hidden" name="subject" value="New contact from EmscapeForge" />
+            <input type="checkbox" name="botcheck" style="display:none" />
+
             <div class="form-group">
               <label for="name">Name</label>
               <input type="text" id="name" name="name" required placeholder="Your name" />
@@ -46,7 +51,14 @@ import config from '../config';
               <textarea id="message" name="message" rows="6" required placeholder="What are you working on? What do you need help with?"></textarea>
             </div>
 
-            <button type="submit" class="button primary">Send Message</button>
+            <button type="submit" class="button primary" id="submit-btn">Send Message</button>
+
+            <p class="form-result" id="form-success" hidden>
+              Message sent! I'll be in touch within one business day.
+            </p>
+            <p class="form-result form-result--error" id="form-error" hidden>
+              Something went wrong. Please try again or email me directly.
+            </p>
           </form>
         </div>
 
@@ -229,4 +241,51 @@ import config from '../config';
     flex-direction: column;
     gap: 0.4rem;
   }
+
+  .form-result {
+    font-size: 0.95rem;
+    padding: 0.75rem 1rem;
+    border-radius: var(--border-radius-medium);
+    background-color: rgba(0, 180, 100, 0.1);
+    color: var(--color-text);
+    margin: 0;
+
+    &--error {
+      background-color: rgba(220, 50, 50, 0.1);
+    }
+  }
 </style>
+
+<script>
+  const form = document.getElementById('contact-form') as HTMLFormElement;
+  const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement;
+  const successMsg = document.getElementById('form-success') as HTMLElement;
+  const errorMsg = document.getElementById('form-error') as HTMLElement;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending…';
+    successMsg.hidden = true;
+    errorMsg.hidden = true;
+
+    try {
+      const res = await fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        body: new FormData(form)
+      });
+      const data = await res.json();
+      if (data.success) {
+        form.reset();
+        successMsg.hidden = false;
+      } else {
+        errorMsg.hidden = false;
+      }
+    } catch {
+      errorMsg.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Send Message';
+    }
+  });
+</script>
