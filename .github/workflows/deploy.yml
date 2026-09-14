@@ -29,9 +29,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    # Safety net: a run that hangs (e.g. a stuck GitHub Pages environment deployment)
-    # fails on its own instead of sitting indefinitely and blocking every deploy queued
-    # behind it — which is what happened on 2026-09-14.
+    # Safety net for a runner-side hang (e.g. a build step that never returns) once
+    # this job is actually executing. This does NOT cover a run stuck pending the
+    # github-pages environment gate before execution starts — that was the actual
+    # failure mode on 2026-09-14, and is handled separately by deploy-watchdog.yml.
     timeout-minutes: 10
     steps:
       - name: Checkout
