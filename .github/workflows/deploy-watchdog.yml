@@ -1,0 +1,80 @@
+# Deploy Watchdog
+#
+# Periodically checks the "Deploy static content to Pages" workflow for a run
+# stuck in a non-completed state (e.g. waiting on an environment gate that never
+# resolves), cancels it, re-triggers a fresh deploy, and opens an issue so the
+# incident isn't silent.
+#
+# Why this exists: on 2026-09-14, a deploy run got stuck in `waiting` indefinitely
+# and, combined with the deploy workflow's old cancel-in-progress: false setting,
+# blocked three merges from ever reaching production with no alert for ~2 hours
+# until someone noticed and manually cancelled it. cancel-in-progress: true (see
+# deploy.yml) now means the *next push* clears a stuck run automatically, but a
+# stuck run during a quiet period (no new pushes) would otherwise sit unnoticed
+# indefinitely — this closes that gap.
+#
+# Known limitation: GitHub can automatically disable scheduled workflows after
+# ~60 days of repository inactivity. On a low-commit-cadence project this
+# watchdog could itself go dormant; it re-enables on the next push, or can be
+# re-enabled manually from the Actions tab.
+
+name: Deploy Watchdog
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  check-stuck-deploys:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find, cancel, and re-trigger stuck deploy runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          THRESHOLD_MINUTES=20
+          NOW_EPOCH=$(date -u +%s)
+          WORKFLOW_NAME="Deploy static content to Pages"
+
+          RUNS_JSON=$(gh run list --workflow="$WORKFLOW_NAME" \
+            --json databaseId,status,createdAt,url --limit 20)
+
+          STUCK_JSON=$(echo "$RUNS_JSON" | jq -c --argjson threshold "$((THRESHOLD_MINUTES * 60))" --argjson now "$NOW_EPOCH" '
+            [.[] | select(.status != "completed") |
+             select(($now - (.createdAt | fromdateiso8601)) > $threshold)]
+          ')
+
+          STUCK_COUNT=$(echo "$STUCK_JSON" | jq 'length')
+
+          if [ "$STUCK_COUNT" -eq 0 ]; then
+            echo "No stuck deploy runs found."
+            exit 0
+          fi
+
+          echo "Found $STUCK_COUNT stuck run(s):"
+          echo "$STUCK_JSON" | jq -r '.[] | "  \(.databaseId) — \(.status) since \(.createdAt) — \(.url)"'
+
+          echo "$STUCK_JSON" | jq -r '.[].databaseId' | while read -r id; do
+            echo "Cancelling stuck run $id"
+            gh run cancel "$id" || true
+          done
+
+          echo "Re-triggering a fresh deploy"
+          gh workflow run "$WORKFLOW_NAME"
+
+          ISSUE_BODY=$(printf 'The deploy watchdog found and cancelled %s stuck run(s) (non-completed for over %s minutes), then re-triggered a fresh deploy.\n\n%s\n' \
+            "$STUCK_COUNT" \
+            "$THRESHOLD_MINUTES" \
+            "$(echo "$STUCK_JSON" | jq -r '.[] | "- \(.url) (status: \(.status), created: \(.createdAt))"')")
+
+          gh issue create \
+            --title "Deploy watchdog: cancelled $STUCK_COUNT stuck run(s) and re-deployed" \
+            --body "$ISSUE_BODY" || echo "Issue creation failed — continuing"
