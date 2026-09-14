@@ -19,7 +19,8 @@ export default {
     bluesky: '#'
   },
   contact: {
-    web3formsKey: '4c46c461-bd09-40ff-b5be-003327cd374e'
+    web3formsKey: '4c46c461-bd09-40ff-b5be-003327cd374e',
+    calcomUrl: 'https://cal.com/emscape/discovery-call?overlayCalendar=true'
   },
   features: {
     darkMode: true,

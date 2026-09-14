@@ -73,6 +73,12 @@ const web3formsKey = config.contact.web3formsKey;
           </div>
 
           <div class="sidebar-block">
+            <h3>Prefer to skip the form?</h3>
+            <p>Book a short discovery call directly on my calendar.</p>
+            <a href={config.contact.calcomUrl} target="_blank" rel="noopener noreferrer" class="button secondary">Book a Discovery Call</a>
+          </div>
+
+          <div class="sidebar-block">
             <h3>Prefer email?</h3>
             <p>Reach me directly at <a href="mailto:emily@emscapeforge.com">emily@emscapeforge.com</a>.</p>
           </div>
@@ -188,6 +194,14 @@ const web3formsKey = config.contact.web3formsKey;
     &.primary {
       background-color: var(--color-primary);
       color: white;
+    }
+
+    &.secondary {
+      background-color: transparent;
+      color: var(--color-text);
+      border: 2px solid var(--color-primary);
+      padding: 0.6rem 1.25rem;
+      font-size: 0.9rem;
     }
   }
 
