@@ -15,7 +15,7 @@ export default {
   ],
   social: {
     github: 'https://github.com/emscape',
-    linkedin: '#',
+    linkedin: 'https://www.linkedin.com/in/emilyanderson81/',
     bluesky: '#'
   },
   contact: {
