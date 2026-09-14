@@ -1,0 +1,55 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/check-arch-boundary.js" }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/check-bash-description.js" },
+          { "type": "command", "command": "node .claude/hooks/check-dep-guard.js" },
+          { "type": "command", "command": "node .claude/hooks/check-script-exists.js" },
+          { "type": "command", "command": "node .claude/hooks/check-commit-message.js" },
+          { "type": "command", "command": "node .claude/hooks/check-merge-guard.js" },
+          { "type": "command", "command": "node .claude/hooks/check-git-push-audit.js" },
+          { "type": "command", "command": "node .claude/hooks/check-branch-delete-guard.js" },
+          { "type": "command", "command": "node .claude/hooks/check-search-command.js" }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/check-env-guard.js" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/validate-content.js" },
+          { "type": "command", "command": "node .claude/hooks/check-empty-tests.js" },
+          { "type": "command", "command": "node .claude/hooks/check-todo-format.js" }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/check-ci-status-after-push.js" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/session-start.sh" }
+        ]
+      }
+    ]
+  }
+}

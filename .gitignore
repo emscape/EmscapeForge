@@ -27,14 +27,6 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Legacy AI tooling (Roo, Sparky/Cline)
-.roo/
-.roomodes
-.rooignore
-.clinerules-sparky-mode
-RooCorePackage/
-sparky-helper.js
-
 # Internal planning docs and working notes
 memory-bank/
 memory-archives/
