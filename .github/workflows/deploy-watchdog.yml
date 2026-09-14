@@ -1,9 +1,10 @@
 # Deploy Watchdog
 #
 # Periodically checks the "Deploy static content to Pages" workflow for a run
-# stuck in a non-completed state (e.g. waiting on an environment gate that never
-# resolves), cancels it, re-triggers a fresh deploy, and opens/updates an issue
-# so the incident isn't silent.
+# stuck pending execution (queued/waiting/pending/requested — e.g. waiting on an
+# environment gate that never resolves), cancels it, re-triggers a fresh deploy,
+# and opens/updates an issue so the incident isn't silent. Runs that are already
+# in_progress are left alone — deploy.yml's own timeout-minutes covers those.
 #
 # Why this exists: on 2026-09-14, a deploy run got stuck in `waiting` indefinitely
 # and, combined with the deploy workflow's old cancel-in-progress: false setting,
@@ -73,8 +74,14 @@ jobs:
             exit 1
           fi
 
+          # Only pre-execution states count as "stuck" here — queued/waiting/pending/
+          # requested runs that never got past an environment gate or the concurrency
+          # queue. Deliberately excludes in_progress: that state is already covered by
+          # deploy.yml's own timeout-minutes, and using createdAt (not startedAt) would
+          # otherwise let this watchdog wrongly cancel a run that queued for 15+ minutes
+          # during an Actions capacity delay and then started executing normally.
           STUCK_JSON=$(echo "$RUNS_JSON" | jq -c --argjson threshold "$((THRESHOLD_MINUTES * 60))" --argjson now "$NOW_EPOCH" '
-            [.[] | select(.status != "completed") |
+            [.[] | select(.status == "queued" or .status == "waiting" or .status == "pending" or .status == "requested") |
              select(($now - (.createdAt | fromdateiso8601)) > $threshold)]
           ')
           STUCK_COUNT=$(echo "$STUCK_JSON" | jq 'length')
@@ -111,7 +118,7 @@ jobs:
           fi
 
           {
-            echo "The deploy watchdog detected $STUCK_COUNT run(s) stuck non-completed for over $THRESHOLD_MINUTES minutes."
+            echo "The deploy watchdog detected $STUCK_COUNT run(s) stuck pending execution for over $THRESHOLD_MINUTES minutes."
             echo ""
             echo "$STUCK_JSON" | jq -r '.[] | "- \(.url) (status: \(.status), created: \(.createdAt))"'
             echo ""
@@ -129,14 +136,30 @@ jobs:
           # creating a new one each cycle, so a persistent outage doesn't flood
           # the repo with duplicate issues for the same ongoing incident.
           EXISTING_ISSUE=$(gh issue list --search '"Deploy watchdog" in:title' --state open --json number --jq '.[0].number // empty')
+          ISSUE_NUMBER=""
 
           if [ -n "$EXISTING_ISSUE" ]; then
-            gh issue comment "$EXISTING_ISSUE" --body-file /tmp/issue_body.txt \
-              || echo "::warning::Failed to comment on existing issue #$EXISTING_ISSUE"
+            ISSUE_NUMBER="$EXISTING_ISSUE"
+            gh issue comment "$ISSUE_NUMBER" --body-file /tmp/issue_body.txt \
+              || echo "::warning::Failed to comment on existing issue #$ISSUE_NUMBER"
           else
-            gh issue create --title "Deploy watchdog: stuck deploy run(s) detected" \
-              --body-file /tmp/issue_body.txt \
-              || echo "::warning::Issue creation failed"
+            CREATED_URL=$(gh issue create --title "Deploy watchdog: stuck deploy run(s) detected" \
+              --body-file /tmp/issue_body.txt)
+            if [ $? -eq 0 ] && [ -n "$CREATED_URL" ]; then
+              ISSUE_NUMBER="${CREATED_URL##*/}"
+            else
+              echo "::warning::Issue creation failed"
+            fi
+          fi
+
+          # Close the issue once this specific incident is fully remediated, rather
+          # than leaving it open indefinitely — otherwise a later, unrelated stuck
+          # run would find this same "open" issue and get conflated into it instead
+          # of starting a fresh one.
+          if [ "$DISPATCH_OK" = true ] && [ -z "$CANCEL_FAILURES" ] && [ -n "$ISSUE_NUMBER" ]; then
+            gh issue close "$ISSUE_NUMBER" \
+              --comment "Remediated: stuck run(s) cancelled and a fresh deploy was re-triggered successfully." \
+              || echo "::warning::Failed to close issue #$ISSUE_NUMBER"
           fi
 
           # A stuck run was found — fail this job visibly (rather than a
