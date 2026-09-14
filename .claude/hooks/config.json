@@ -1,12 +1,13 @@
 {
   "_readme": "Customize this file for your project. See .claude/hooks/README.md for full documentation.",
 
-  "project_name": "My Project",
+  "project_name": "EmscapeForge",
 
   "session_start": {
     "custom_notes": [
-      "Add project-specific reminders here",
-      "e.g. 'Domain logic must not import from UI packages'"
+      "Windows 11 + Git Bash. All website commands run from the website/ subdirectory.",
+      "Never commit directly to master for feature work; every change gets its own branch + PR.",
+      "Deploy is GitHub Pages via .github/workflows/deploy.yml, triggered by a push to master."
     ]
   },
 
@@ -57,7 +58,7 @@
 
   "push_audit": {
     "enabled": true,
-    "_comment": "Before any git push, audits staged (or HEAD~1) diff for: hardcoded secrets (BLOCK), debug statements, commented-out code, missing tests, lockfile drift. Reports PASS/BLOCK with per-finding severity.",
+    "_comment": "Before any git push, audits staged (or HEAD~1, or the empty tree for a root commit) diff for: hardcoded secrets (BLOCK), debug statements, commented-out code, missing tests, lockfile drift. Reports PASS/BLOCK with per-finding severity.",
     "_checks": {
       "secrets": "HIGH — blocks push. Detects API keys, passwords, tokens, private keys in added lines.",
       "debug_statements": "MEDIUM — console.log, debugger, pprint in non-test files.",
@@ -65,6 +66,36 @@
       "lockfile_drift": "MEDIUM — package.json changed without a lockfile update.",
       "missing_tests": "MEDIUM — source files changed with zero test file changes."
     }
+  },
+
+  "branch_delete_guard": {
+    "enabled": true,
+    "_comment": "Blocks `git push <remote> --delete <branch>` (and the `:branch` shorthand) when an open GitHub PR still has that branch as its base. Deleting a stacked PR's base branch does not merge it — GitHub auto-closes it instead (its commits usually aren't in the new target yet), and a closed PR's base can't be retargeted; the only recovery is opening a brand-new PR from the same branch/commits. Requires the gh CLI, authenticated — fails open (allows, with a warning) if gh is unavailable, so a stale check never blocks otherwise-normal work. Local `git branch -D` is intentionally out of scope, since that alone can't break a GitHub PR's base."
+  },
+
+  "ci_status_check": {
+    "enabled": true,
+    "_comment": "After any git push, blocks (synchronously) until the matching GitHub Actions run for that exact commit completes, and reports the real pass/fail result. Requires the gh CLI, authenticated. Adds real wall-clock wait time to every push — roughly however long your CI takes to run. If your repo has no GitHub Actions workflow, this harmlessly reports 'no run found' once per push (new_run_timeout_seconds) and exits 1 informationally.",
+    "poll_interval_seconds": 5,
+    "new_run_timeout_seconds": 60,
+    "_new_run_timeout_note": "How long to wait for a run matching the just-pushed commit SHA to even appear in `gh run list`.",
+    "completion_timeout_seconds": 180,
+    "_completion_timeout_note": "Currently unenforced — check-ci-status-after-push.js uses `gh run watch` for this phase, which blocks until the run finishes with no timeout flag of its own. Left here as a documented intent for a future implementer, not a working setting."
+  },
+
+  "merge_guard": {
+    "enabled": true,
+    "_comment": "Unconditionally blocks `gh pr merge`, a PUT to the `gh api .../pulls/{n}/merge` REST equivalent, a local `git merge` on master/main, and any push (refspec or plain branch name) that lands commits directly on master/main. A hook can't verify from inside a Bash call whether a human already gave permission in conversation, so instead of trying it blocks every matching command, every time — the merge has to happen on the actual GitHub PR page after a human explicitly says go-ahead."
+  },
+
+  "search_guard": {
+    "enabled": true,
+    "_comment": "Nudge (or block) raw shell search/read commands (grep, find, cat, head, tail, ...) in favor of the assistant's own dedicated search/read tools, which return structured, token-bounded results instead of raw stdout dumps.",
+    "commands": ["grep", "egrep", "fgrep", "rg", "find", "cat", "head", "tail"],
+    "on_violation": "warn",
+    "_on_violation_note": "'warn' prints to stderr (exit 0) | 'block' exits 2 and rejects the tool call",
+    "allow_patterns": [],
+    "_allow_patterns_note": "Substrings that, if present anywhere in the command, skip the check entirely — e.g. a known-legitimate build/CI command that happens to invoke grep/cat internally."
   },
 
   "dep_guard": {

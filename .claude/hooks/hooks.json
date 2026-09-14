@@ -19,13 +19,16 @@
       },
       {
         "matcher": "Bash",
-        "_purpose": "Require description (bash_description_guard) + warn on dependency installs (dep_guard) + validate npm run scripts exist (script_guard) + enforce commit message structure (commit_guard) + pre-push diff audit (push_audit)",
+        "_purpose": "Require description (bash_description_guard) + warn on dependency installs (dep_guard) + validate npm run scripts exist (script_guard) + enforce commit message structure (commit_guard) + pre-push diff audit (push_audit) + block deleting a branch an open PR still bases off (branch_delete_guard) + unconditionally block PR/protected-branch merges (merge_guard) + nudge away from raw grep/find/cat/head/tail (search_guard)",
         "hooks": [
           { "type": "command", "command": "node .claude/hooks/check-bash-description.js" },
           { "type": "command", "command": "node .claude/hooks/check-dep-guard.js" },
           { "type": "command", "command": "node .claude/hooks/check-script-exists.js" },
           { "type": "command", "command": "node .claude/hooks/check-commit-message.js" },
-          { "type": "command", "command": "node .claude/hooks/check-git-push-audit.js" }
+          { "type": "command", "command": "node .claude/hooks/check-merge-guard.js" },
+          { "type": "command", "command": "node .claude/hooks/check-git-push-audit.js" },
+          { "type": "command", "command": "node .claude/hooks/check-branch-delete-guard.js" },
+          { "type": "command", "command": "node .claude/hooks/check-search-command.js" }
         ]
       },
       {
@@ -44,6 +47,13 @@
           { "type": "command", "command": "node .claude/hooks/validate-content.js" },
           { "type": "command", "command": "node .claude/hooks/check-empty-tests.js" },
           { "type": "command", "command": "node .claude/hooks/check-todo-format.js" }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "_purpose": "After a real git push, block until the matching GitHub Actions run completes and report the real result (ci_status_check) — a local test pass is not proof of a green remote run",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/check-ci-status-after-push.js" }
         ]
       }
     ],

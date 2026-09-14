@@ -35,6 +35,13 @@ Before running **any** terminal command, state:
 
 "I'll just check..." is not sufficient. No exceptions.
 
+**Prefer dedicated tools over shell search/read commands.** Use Grep/Glob/Read (or this
+environment's equivalents) instead of raw `grep`, `find`, `cat`, `head`, or `tail` in Bash — they
+return structured, token-bounded results instead of dumping raw output into context. Reach for
+the shell command only when the dedicated tool genuinely cannot do the job (e.g. piping search
+results into another shell command). `.claude/hooks/check-search-command.js` (`search_guard` in
+config.json) enforces this as a nudge by default — see that file to switch it to a hard block.
+
 ---
 
 ## Commit Format

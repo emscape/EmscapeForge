@@ -25,13 +25,20 @@
 const { execSync } = require('child_process');
 
 // ── Secret patterns ────────────────────────────────────────────────────────────
+// Generic (non-vendor-specific) patterns use a length floor to cut down on
+// false positives against short, human-readable test fixtures like
+// `apiKey: 'test-api-key'` (12 chars) — real API keys/secrets are almost
+// always 20+ chars. The vendor-specific patterns below (Google/OpenAI/
+// GitHub/Slack/AWS) don't need this since they already match exact
+// real-world formats, not just "any quoted string after a credential-
+// shaped key name".
 const SECRET_PATTERNS = [
   {
-    re: /(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|client[_-]?secret)\s*[:=]\s*['"`][A-Za-z0-9+/\-_]{8,}['"`]/i,
+    re: /(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|client[_-]?secret)\s*[:=]\s*['"`][A-Za-z0-9+/\-_]{20,}['"`]/i,
     name: 'hardcoded credential',
   },
   {
-    re: /password\s*[:=]\s*['"`][^'"`\s]{4,}['"`]/i,
+    re: /password\s*[:=]\s*['"`][^'"`\s]{12,}['"`]/i,
     name: 'hardcoded password',
   },
   {
@@ -65,6 +72,19 @@ function run(cmd) {
   }
 }
 
+// Existence check by exit code only — git's "ambiguous argument" error for a
+// missing ref (e.g. HEAD~1 on a root commit) writes the ref name itself to
+// stdout as part of its usage hint, which would make a truthy-stdout check
+// misread failure as success. Exit code is the only reliable signal.
+function refExists(ref) {
+  try {
+    execSync(`git rev-parse --verify ${ref}`, { stdio: ['pipe', 'ignore', 'ignore'] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Parse unified diff into added lines ───────────────────────────────────────
 function parseAddedLines(diffText) {
   const lines = diffText.split('\n');
@@ -92,7 +112,11 @@ function parseAddedLines(diffText) {
 
 function isTestFile(path) {
   return (
-    /\.(test|spec)\.[jt]sx?$/.test(path) ||
+    // [mc]? covers .mjs/.cjs, not just .js/.ts/.jsx/.tsx — without it this
+    // never once matched a vitest-in-ESM *.test.mjs file (this project's
+    // actual convention for testing CommonJS Functions code), making the
+    // "source changed with no test changes" check fire on every such PR.
+    /\.(test|spec)\.[mc]?[jt]sx?$/.test(path) ||
     /__(?:tests?|specs?)__/.test(path) ||
     /\/tests?\//.test(path) ||
     /_test\.[a-z]+$/.test(path)
@@ -111,7 +135,11 @@ process.stdin.on('end', () => {
   }
 
   const cmd = (input?.tool_input?.command || '').trim();
-  if (!/\bgit\b.*\bpush\b/.test(cmd)) {
+  // Tighter than a bare substring match on purpose — the old
+  // `\bgit\b.*\bpush\b` matched any command whose text merely contained
+  // "push" anywhere (e.g. this very filename), not just actual `git push`
+  // invocations. Require "git push" as adjacent words.
+  if (!/(^|[;&|]\s*|\s)git\s+push(\s|$)/.test(cmd)) {
     process.exit(0); // not a push — allow
   }
 
@@ -121,9 +149,17 @@ process.stdin.on('end', () => {
   let changedFiles = run('git diff --staged --name-only').trim();
 
   if (!changedFiles) {
-    diffText = run('git diff HEAD~1');
-    diffSource = 'HEAD~1';
-    changedFiles = run('git diff HEAD~1 --name-only').trim();
+    // HEAD~1 doesn't exist for a repo's root commit (first-ever push, or a
+    // force-push establishing new history) — diffing against it errors out
+    // and used to be misread as "nothing changed". Fall back to git's
+    // empty-tree object so root commits get audited for real instead of
+    // being waved through as an empty changeset.
+    const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+    const hasParent = refExists('HEAD~1');
+    const baseRef = hasParent ? 'HEAD~1' : EMPTY_TREE;
+    diffText = run(`git diff ${baseRef}`);
+    diffSource = hasParent ? 'HEAD~1' : 'root commit (vs. empty tree)';
+    changedFiles = run(`git diff ${baseRef} --name-only`).trim();
   }
 
   if (!changedFiles) {
@@ -138,13 +174,19 @@ process.stdin.on('end', () => {
   const findings = [];
 
   // ── Check 1: Hardcoded secrets ─────────────────────────────────────────────
+  // A trailing `// nosecret` (or `# nosecret`) comment suppresses this check
+  // for that one line — an explicit, auditable, per-line escape hatch for
+  // genuine false positives (test fixtures, docs examples) that no regex
+  // can fully anticipate, without weakening the patterns themselves.
+  const SUPPRESS_MARKER = /(?:\/\/|#)\s*nosecret\s*$/;
   for (const { file, lineNum, content } of addedLines) {
+    if (SUPPRESS_MARKER.test(content)) continue;
     for (const { re, name } of SECRET_PATTERNS) {
       if (re.test(content)) {
         findings.push({
           file, line: lineNum, severity: 'high',
           issue: `Possible ${name} detected`,
-          fix: 'Move to environment variable or secrets manager; never commit credentials',
+          fix: 'Move to environment variable or secrets manager; never commit credentials. If this is a genuine false positive (e.g. a test fixture), add a trailing `// nosecret` comment.',
         });
       }
     }

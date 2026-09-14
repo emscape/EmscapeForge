@@ -13,13 +13,11 @@
  *                               dep_guard.custom_message
  */
 
-import { readFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+const { readFileSync } = require('fs');
+const { resolve } = require('path');
 
 // ── Locate config ─────────────────────────────────────────────────────────
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = resolve(SCRIPT_DIR, 'config.json');
+const CONFIG_PATH = resolve(__dirname, 'config.json');
 
 // ── Load config ───────────────────────────────────────────────────────────
 let config;

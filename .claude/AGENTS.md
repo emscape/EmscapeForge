@@ -452,7 +452,7 @@ copilot -p "Why does my advisory lock allow duplicates across 10 concurrent task
 ## Core Principle
 Coordinator ORCHESTRATES sub-agents. Coordinator does NOT write tests or implementation directly.
 
-**Implementation**: See agent-specific documentation (CLAUDE.md, AUGMENT.md, CURSOR.md) for tool invocation syntax.
+**Implementation**: See agent-specific documentation (CLAUDE.md, CURSOR.md) for tool invocation syntax.
 
 ## Available Sub-Agents
 
