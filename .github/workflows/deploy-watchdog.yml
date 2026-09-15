@@ -116,7 +116,12 @@ jobs:
             # not merely because no run is currently stuck (a re-triggered deploy
             # could itself have failed for an unrelated reason).
             EXISTING_ISSUE=$(gh issue list --search "$WATCHDOG_ISSUE_SEARCH" --state open --json number --jq '.[0].number // empty')
-            if [ -n "$EXISTING_ISSUE" ]; then
+            if [ $? -ne 0 ]; then
+              # No duplicate-creation risk in this branch (it only ever closes, never
+              # creates) — a lookup failure here just means a resolved issue stays
+              # open one extra cycle, so warn and move on rather than failing the job.
+              echo "::warning::gh issue list lookup failed — skipping recovery check this cycle"
+            elif [ -n "$EXISTING_ISSUE" ]; then
               LATEST_CONCLUSION=$(gh run list --workflow="$WORKFLOW_FILE" --status completed \
                 --json conclusion --limit 1 --jq '.[0].conclusion // empty')
               if [ "$LATEST_CONCLUSION" = "success" ]; then
@@ -181,13 +186,21 @@ jobs:
           # this issue is deliberately NOT closed here even when dispatch
           # succeeds — see the STUCK_COUNT -eq 0 branch above for why.
           EXISTING_ISSUE=$(gh issue list --search "$WATCHDOG_ISSUE_SEARCH" --state open --json number --jq '.[0].number // empty')
+          LOOKUP_FAILED=$?
           ISSUE_NUMBER=""
           # Tracks whether the incident actually got reported anywhere — this is the
           # whole point of the watchdog, so a failure here must not be allowed to
           # silently exit 0 just because cancellation/re-dispatch happened to succeed.
           REPORT_OK=true
 
-          if [ -n "$EXISTING_ISSUE" ]; then
+          if [ "$LOOKUP_FAILED" -ne 0 ]; then
+            # Don't fall through to `gh issue create` on a failed lookup — we
+            # genuinely don't know whether an open issue already exists, and
+            # blindly creating one risks exactly the duplicate this idempotency
+            # check exists to prevent.
+            echo "::warning::gh issue list lookup failed — skipping issue create/comment this cycle to avoid a possible duplicate"
+            REPORT_OK=false
+          elif [ -n "$EXISTING_ISSUE" ]; then
             ISSUE_NUMBER="$EXISTING_ISSUE"
             if ! gh issue comment "$ISSUE_NUMBER" --body-file /tmp/issue_body.txt; then
               echo "::warning::Failed to comment on existing issue #$ISSUE_NUMBER"
