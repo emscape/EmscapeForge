@@ -15,11 +15,12 @@ permissions:
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+# Allow only one concurrent deployment. A new push cancels whatever's queued or in
+# progress ahead of it — for a single-maintainer static site, the latest push should
+# always be what goes live, not whichever push got there first.
 concurrency:
   group: 'pages'
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   # Single deploy job since we're just deploying
@@ -28,6 +29,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    # Safety net for a runner-side hang (e.g. a build step that never returns) once
+    # this job is actually executing. This does NOT cover a run stuck pending the
+    # github-pages environment gate before execution starts — that was the actual
+    # failure mode on 2026-09-14, and is handled separately by deploy-watchdog.yml.
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
