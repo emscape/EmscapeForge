@@ -9,8 +9,11 @@
 # Recovery is confirmed on a later cycle, not synchronously: re-triggering a
 # deploy only confirms GitHub accepted the dispatch, not that it actually
 # succeeded, so the incident issue is closed once a subsequent check finds no
-# stuck runs AND the most recent completed run succeeded — not immediately
-# after dispatch.
+# stuck runs AND a completed run created after this incident's own remediation
+# attempt succeeded — not immediately after dispatch, and not fooled by an
+# older, unrelated success left over from before the incident. The "after this
+# incident" part is tracked via a `<!-- watchdog-cycle-time: EPOCH -->` marker
+# left in the issue's most recent update.
 #
 # Why this exists: on 2026-09-14, a deploy run got stuck in `waiting` indefinitely
 # and, combined with the deploy workflow's old cancel-in-progress: false setting,
@@ -122,17 +125,36 @@ jobs:
               # open one extra cycle, so warn and move on rather than failing the job.
               echo "::warning::gh issue list lookup failed — skipping recovery check this cycle"
             elif [ -n "$EXISTING_ISSUE" ]; then
-              LATEST_CONCLUSION=$(gh run list --workflow="$WORKFLOW_FILE" --status completed \
-                --json conclusion --limit 1 --jq '.[0].conclusion // empty')
-              if [ "$LATEST_CONCLUSION" = "success" ]; then
-                echo "Most recent completed deploy succeeded — closing issue #$EXISTING_ISSUE"
+              # Pull the marker from the most recent update to the issue — its last
+              # comment if it has one, otherwise the issue body itself — not just
+              # the original body, which would go stale the moment a second
+              # incident cycle adds a comment instead of editing the body.
+              LATEST_UPDATE_TEXT=$(gh issue view "$EXISTING_ISSUE" --json body,comments --jq '
+                if (.comments | length) > 0 then .comments[-1].body else .body end
+              ' 2>/dev/null)
+              INCIDENT_EPOCH=$(echo "$LATEST_UPDATE_TEXT" | grep -o 'watchdog-cycle-time: [0-9]*' | grep -o '[0-9]*$' | tail -1)
+
+              LATEST_RUN_JSON=$(gh run list --workflow="$WORKFLOW_FILE" --status completed \
+                --json conclusion,createdAt --limit 1)
+              LATEST_CONCLUSION=$(echo "$LATEST_RUN_JSON" | jq -r '.[0].conclusion // empty')
+              LATEST_CREATED=$(echo "$LATEST_RUN_JSON" | jq -r '.[0].createdAt // empty')
+              LATEST_EPOCH=""
+              [ -n "$LATEST_CREATED" ] && LATEST_EPOCH=$(date -u -d "$LATEST_CREATED" +%s 2>/dev/null)
+
+              # Require the successful run to postdate this incident's own
+              # remediation attempt — otherwise an older, unrelated success sitting
+              # as "most recent completed" (while the real replacement deploy is
+              # still pending, or failed to dispatch at all) would be mistaken for
+              # confirmation that this specific incident recovered.
+              if [ "$LATEST_CONCLUSION" = "success" ] && [ -n "$LATEST_EPOCH" ] && [ -n "$INCIDENT_EPOCH" ] && [ "$LATEST_EPOCH" -ge "$INCIDENT_EPOCH" ]; then
+                echo "Deploy created $LATEST_CREATED succeeded and postdates the incident — closing issue #$EXISTING_ISSUE"
                 if ! gh issue close "$EXISTING_ISSUE" \
-                  --comment "Recovered: no stuck runs remain and the most recent deploy completed successfully."; then
+                  --comment "Recovered: a deploy created after this incident's remediation attempt completed successfully."; then
                   echo "::warning::Failed to close issue #$EXISTING_ISSUE"
                   exit 1
                 fi
               else
-                echo "Issue #$EXISTING_ISSUE stays open — most recent completed run's conclusion was '$LATEST_CONCLUSION', not success"
+                echo "Issue #$EXISTING_ISSUE stays open — no completed run created after the incident (marker epoch: ${INCIDENT_EPOCH:-none}) has succeeded yet (latest completed: conclusion=$LATEST_CONCLUSION, created=$LATEST_CREATED)"
               fi
             fi
 
@@ -160,9 +182,20 @@ jobs:
             # run behind it, right back where this incident started.
             DISPATCH_OK=false
             DISPATCH_NOTE="Skipped re-trigger: failed to cancel run(s):$CANCEL_FAILURES — they may still hold the concurrency lock."
-          elif ! gh workflow run "$WORKFLOW_FILE"; then
-            DISPATCH_OK=false
-            DISPATCH_NOTE="Re-trigger (gh workflow run) failed after cancelling stuck run(s)."
+          else
+            # Re-check immediately before dispatch: a fresh push could have landed
+            # a legitimate in_progress deploy while this cycle was busy cancelling
+            # the stuck run(s) above. deploy.yml's cancel-in-progress: true means
+            # dispatching into the same 'pages' concurrency group now would cancel
+            # that healthy run — skip the redispatch instead of racing it.
+            ACTIVE_RUN=$(gh run list --workflow="$WORKFLOW_FILE" --status in_progress \
+              --json databaseId --limit 1 --jq '.[0].databaseId // empty')
+            if [ -n "$ACTIVE_RUN" ]; then
+              DISPATCH_NOTE="Skipped re-trigger: run $ACTIVE_RUN is already in_progress — a fresh deploy appears underway already, redispatching now would risk cancelling it."
+            elif ! gh workflow run "$WORKFLOW_FILE"; then
+              DISPATCH_OK=false
+              DISPATCH_NOTE="Re-trigger (gh workflow run) failed after cancelling stuck run(s)."
+            fi
           fi
 
           {
@@ -173,11 +206,21 @@ jobs:
             [ -n "$CANCELLED_OK" ] && echo "Cancelled successfully:$CANCELLED_OK"
             [ -n "$CANCEL_FAILURES" ] && echo "**FAILED to cancel:**$CANCEL_FAILURES — these may still be holding the pages concurrency group."
             echo ""
-            if [ "$DISPATCH_OK" = true ]; then
+            if [ "$DISPATCH_OK" = true ] && [ -z "$DISPATCH_NOTE" ]; then
               echo "A fresh deploy was re-triggered. This only confirms GitHub accepted the dispatch, not that it succeeded — this issue stays open until a later check confirms the deploy actually completed successfully."
+            elif [ "$DISPATCH_OK" = true ]; then
+              echo "$DISPATCH_NOTE"
             else
               echo "**$DISPATCH_NOTE**"
             fi
+            echo ""
+            # Machine-readable marker: this cycle's start time, captured before any
+            # cancel/dispatch action above. A later cycle's recovery check uses this
+            # to require that the successful run confirming recovery was actually
+            # created during or after this remediation attempt — not some older,
+            # unrelated success that happens to still be "the most recent completed
+            # run" while the real replacement deploy is still pending or failed.
+            echo "<!-- watchdog-cycle-time: $NOW_EPOCH -->"
           } > /tmp/issue_body.txt
 
           # Idempotency: update the existing open watchdog issue instead of
