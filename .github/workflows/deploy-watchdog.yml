@@ -125,14 +125,27 @@ jobs:
               # open one extra cycle, so warn and move on rather than failing the job.
               echo "::warning::gh issue list lookup failed — skipping recovery check this cycle"
             elif [ -n "$EXISTING_ISSUE" ]; then
-              # Pull the marker from the most recent update to the issue — its last
-              # comment if it has one, otherwise the issue body itself — not just
-              # the original body, which would go stale the moment a second
-              # incident cycle adds a comment instead of editing the body.
-              LATEST_UPDATE_TEXT=$(gh issue view "$EXISTING_ISSUE" --json body,comments --jq '
-                if (.comments | length) > 0 then .comments[-1].body else .body end
+              # Search every comment (newest first), then the body, for the most
+              # recent text that actually contains a watchdog marker — not just
+              # the last comment, which could just as easily be a maintainer's
+              # own note on the open incident with no marker at all. Trusting
+              # .comments[-1] unconditionally would mean a single human comment
+              # on the issue permanently breaks auto-close, since no later cycle
+              # would ever find a marker again. Candidates are base64-encoded so
+              # embedded newlines in comment text can't be misread as separators.
+              INCIDENT_EPOCH=""
+              CANDIDATES_B64=$(gh issue view "$EXISTING_ISSUE" --json body,comments --jq '
+                ([.comments | reverse | .[].body] + [.body])[] | @base64
               ' 2>/dev/null)
-              INCIDENT_EPOCH=$(echo "$LATEST_UPDATE_TEXT" | grep -o 'watchdog-cycle-time: [0-9]*' | grep -o '[0-9]*$' | tail -1)
+              while IFS= read -r CANDIDATE_B64; do
+                [ -z "$CANDIDATE_B64" ] && continue
+                CANDIDATE_TEXT=$(echo "$CANDIDATE_B64" | base64 -d 2>/dev/null)
+                CANDIDATE_EPOCH=$(echo "$CANDIDATE_TEXT" | grep -o 'watchdog-cycle-time: [0-9]*' | grep -o '[0-9]*$' | tail -1)
+                if [ -n "$CANDIDATE_EPOCH" ]; then
+                  INCIDENT_EPOCH="$CANDIDATE_EPOCH"
+                  break
+                fi
+              done <<< "$CANDIDATES_B64"
 
               LATEST_RUN_JSON=$(gh run list --workflow="$WORKFLOW_FILE" --status completed \
                 --json conclusion,createdAt --limit 1)
@@ -174,6 +187,31 @@ jobs:
             fi
           done < <(echo "$STUCK_JSON" | jq -r '.[].databaseId')
 
+          # `gh run cancel` only requests cancellation — it can return before the
+          # run actually reaches a terminal state. Dispatching immediately could
+          # still queue the replacement behind a run that hasn't finished
+          # transitioning out of the concurrency group yet, which is exactly the
+          # queueing failure this watchdog exists to clear. Poll each cancelled
+          # run briefly for a terminal (completed) status before proceeding.
+          CANCEL_SETTLED=true
+          if [ -n "$CANCELLED_OK" ]; then
+            for id in $CANCELLED_OK; do
+              SETTLED=false
+              for i in 1 2 3 4 5 6; do
+                RUN_STATUS=$(gh run view "$id" --json status --jq '.status' 2>/dev/null)
+                if [ "$RUN_STATUS" = "completed" ]; then
+                  SETTLED=true
+                  break
+                fi
+                sleep 5
+              done
+              if [ "$SETTLED" = false ]; then
+                echo "::warning::Run $id did not reach a terminal state within ~30s of cancelling — may still hold the concurrency lock"
+                CANCEL_SETTLED=false
+              fi
+            done
+          fi
+
           DISPATCH_OK=true
           DISPATCH_NOTE=""
           if [ -n "$CANCEL_FAILURES" ]; then
@@ -182,6 +220,9 @@ jobs:
             # run behind it, right back where this incident started.
             DISPATCH_OK=false
             DISPATCH_NOTE="Skipped re-trigger: failed to cancel run(s):$CANCEL_FAILURES — they may still hold the concurrency lock."
+          elif [ "$CANCEL_SETTLED" = false ]; then
+            DISPATCH_OK=false
+            DISPATCH_NOTE="Skipped re-trigger: cancelled run(s) did not settle to a terminal state in time — may still hold the concurrency lock."
           else
             # Re-check immediately before dispatch: a fresh push could have landed
             # a legitimate in_progress deploy while this cycle was busy cancelling
@@ -190,7 +231,13 @@ jobs:
             # that healthy run — skip the redispatch instead of racing it.
             ACTIVE_RUN=$(gh run list --workflow="$WORKFLOW_FILE" --status in_progress \
               --json databaseId --limit 1 --jq '.[0].databaseId // empty')
-            if [ -n "$ACTIVE_RUN" ]; then
+            ACTIVE_LOOKUP_FAILED=$?
+            if [ "$ACTIVE_LOOKUP_FAILED" -ne 0 ]; then
+              # Don't assume "no active run" on a failed lookup — that's exactly
+              # the assumption that would let this dispatch race a healthy deploy.
+              DISPATCH_OK=false
+              DISPATCH_NOTE="Skipped re-trigger: failed to check for an active run before dispatching — could not confirm it's safe to redispatch."
+            elif [ -n "$ACTIVE_RUN" ]; then
               DISPATCH_NOTE="Skipped re-trigger: run $ACTIVE_RUN is already in_progress — a fresh deploy appears underway already, redispatching now would risk cancelling it."
             elif ! gh workflow run "$WORKFLOW_FILE"; then
               DISPATCH_OK=false
