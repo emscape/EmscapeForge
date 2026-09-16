@@ -185,9 +185,19 @@ jobs:
             # that scan and this cancellation. Re-check right before acting so a
             # run that started executing normally isn't cancelled out from under
             # itself, which would break the documented promise to leave running
-            # deploys alone. If the re-check itself fails, fall back to the
-            # original plan and attempt the cancel anyway.
+            # deploys alone.
             CURRENT_STATUS=$(gh run view "$id" --json status --jq '.status' 2>/dev/null)
+            STATUS_CHECK_FAILED=$?
+            if [ "$STATUS_CHECK_FAILED" -ne 0 ] || [ -z "$CURRENT_STATUS" ]; then
+              # Can't confirm this run hasn't since started executing — treat as
+              # unsafe to touch rather than falling back to a blind cancel, which
+              # could kill a healthy deploy on nothing more than a transient read
+              # failure. Leave it for a later cycle instead (it'll still show up
+              # in the next scan if it's genuinely still stuck).
+              echo "::warning::Could not confirm current status of run $id — leaving it for a later cycle rather than cancelling blindly"
+              CANCEL_FAILURES="$CANCEL_FAILURES $id"
+              continue
+            fi
             if [ "$CURRENT_STATUS" = "in_progress" ] || [ "$CURRENT_STATUS" = "completed" ]; then
               echo "Run $id is now '$CURRENT_STATUS' — no longer stuck, leaving it alone"
               continue
