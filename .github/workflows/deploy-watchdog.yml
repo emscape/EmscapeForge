@@ -180,6 +180,18 @@ jobs:
           CANCELLED_OK=""
           CANCEL_FAILURES=""
           while read -r id; do
+            # The IDs above were captured at the start of this cycle — a run can
+            # transition to in_progress (or even complete) in the time between
+            # that scan and this cancellation. Re-check right before acting so a
+            # run that started executing normally isn't cancelled out from under
+            # itself, which would break the documented promise to leave running
+            # deploys alone. If the re-check itself fails, fall back to the
+            # original plan and attempt the cancel anyway.
+            CURRENT_STATUS=$(gh run view "$id" --json status --jq '.status' 2>/dev/null)
+            if [ "$CURRENT_STATUS" = "in_progress" ] || [ "$CURRENT_STATUS" = "completed" ]; then
+              echo "Run $id is now '$CURRENT_STATUS' — no longer stuck, leaving it alone"
+              continue
+            fi
             if gh run cancel "$id"; then
               CANCELLED_OK="$CANCELLED_OK $id"
             else
@@ -225,20 +237,33 @@ jobs:
             DISPATCH_NOTE="Skipped re-trigger: cancelled run(s) did not settle to a terminal state in time — may still hold the concurrency lock."
           else
             # Re-check immediately before dispatch: a fresh push could have landed
-            # a legitimate in_progress deploy while this cycle was busy cancelling
-            # the stuck run(s) above. deploy.yml's cancel-in-progress: true means
-            # dispatching into the same 'pages' concurrency group now would cancel
-            # that healthy run — skip the redispatch instead of racing it.
-            ACTIVE_RUN=$(gh run list --workflow="$WORKFLOW_FILE" --status in_progress \
-              --json databaseId --limit 1 --jq '.[0].databaseId // empty')
-            ACTIVE_LOOKUP_FAILED=$?
-            if [ "$ACTIVE_LOOKUP_FAILED" -ne 0 ]; then
+            # a legitimate deploy — in_progress, or still queued/waiting/pending/
+            # requested itself — while this cycle was busy cancelling the stuck
+            # run(s) above. deploy.yml's cancel-in-progress: true means dispatching
+            # into the same 'pages' concurrency group now would cancel that run
+            # regardless of which non-completed status it's currently in — skip
+            # the redispatch instead of racing it.
+            ACTIVE_RUN=""
+            ACTIVE_LOOKUP_FAILED=false
+            for CHECK_STATUS in queued waiting pending requested in_progress; do
+              FOUND_RUN=$(gh run list --workflow="$WORKFLOW_FILE" --status "$CHECK_STATUS" \
+                --json databaseId --limit 1 --jq '.[0].databaseId // empty')
+              if [ $? -ne 0 ]; then
+                ACTIVE_LOOKUP_FAILED=true
+                break
+              fi
+              if [ -n "$FOUND_RUN" ]; then
+                ACTIVE_RUN="$FOUND_RUN"
+                break
+              fi
+            done
+            if [ "$ACTIVE_LOOKUP_FAILED" = true ]; then
               # Don't assume "no active run" on a failed lookup — that's exactly
               # the assumption that would let this dispatch race a healthy deploy.
               DISPATCH_OK=false
-              DISPATCH_NOTE="Skipped re-trigger: failed to check for an active run before dispatching — could not confirm it's safe to redispatch."
+              DISPATCH_NOTE="Skipped re-trigger: failed to check for an active/pending run before dispatching — could not confirm it's safe to redispatch."
             elif [ -n "$ACTIVE_RUN" ]; then
-              DISPATCH_NOTE="Skipped re-trigger: run $ACTIVE_RUN is already in_progress — a fresh deploy appears underway already, redispatching now would risk cancelling it."
+              DISPATCH_NOTE="Skipped re-trigger: run $ACTIVE_RUN is already active — a fresh deploy appears underway already, redispatching now would risk cancelling it."
             elif ! gh workflow run "$WORKFLOW_FILE"; then
               DISPATCH_OK=false
               DISPATCH_NOTE="Re-trigger (gh workflow run) failed after cancelling stuck run(s)."
