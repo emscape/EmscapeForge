@@ -64,11 +64,17 @@ jobs:
           # the repository from — GH_REPO makes every gh call explicit instead.
           GH_REPO: ${{ github.repository }}
         run: |
-          set -uo pipefail
-          # Deliberately no -e: several steps below need to run their own
-          # success/failure handling rather than aborting the script outright,
-          # so a partial failure still gets reported in the incident issue
-          # instead of silently vanishing.
+          # GitHub Actions runs an unspecified-shell `run:` step as `bash -e {0}` —
+          # errexit is ON by default, and `set -uo pipefail` alone does NOT turn it
+          # off (it only touches -u and -o pipefail; -e keeps whatever state it
+          # already had). Every "assign a variable from a command substitution,
+          # then check $? on the next line" pattern below relies on the script
+          # surviving that command's failure — under the default -e, it does not:
+          # a failing command substitution as a plain assignment kills the step
+          # immediately, and the $? line is never reached. Explicitly disabling -e
+          # here was verified locally to be the difference between "after" printing
+          # and the whole script dying silently one line earlier.
+          set +e -u -o pipefail
 
           THRESHOLD_MINUTES=20
           NOW_EPOCH=$(date -u +%s)
