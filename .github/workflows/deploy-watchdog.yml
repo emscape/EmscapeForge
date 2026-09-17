@@ -1,0 +1,411 @@
+# Deploy Watchdog
+#
+# Periodically checks the "Deploy static content to Pages" workflow for a run
+# stuck pending execution (queued/waiting/pending/requested — e.g. waiting on an
+# environment gate that never resolves), cancels it, re-triggers a fresh deploy,
+# and opens/updates an issue so the incident isn't silent. Runs that are already
+# in_progress are left alone — deploy.yml's own timeout-minutes covers those.
+#
+# Recovery is confirmed on a later cycle, not synchronously: re-triggering a
+# deploy only confirms GitHub accepted the dispatch, not that it actually
+# succeeded, so the incident issue is closed once a subsequent check finds a
+# completed run created after this incident's own remediation attempt that
+# succeeded — not immediately after dispatch, and not fooled by an older,
+# unrelated success left over from before the incident. The "after this
+# incident" part is tracked via a `<!-- watchdog-cycle-time: EPOCH -->` marker
+# left in the issue's most recent update. If no such run has succeeded yet,
+# that same cycle retries the dispatch (guarded the same way as the original
+# attempt) rather than only checking and giving up — otherwise a redispatch
+# that itself got stuck or skipped once would leave the site on the old
+# revision indefinitely through a quiet period with no further pushes.
+#
+# Why this exists: on 2026-09-14, a deploy run got stuck in `waiting` indefinitely
+# and, combined with the deploy workflow's old cancel-in-progress: false setting,
+# blocked three merges from ever reaching production with no alert for ~2 hours
+# until someone noticed and manually cancelled it. cancel-in-progress: true (see
+# deploy.yml) now means the *next push* clears a stuck run automatically, but a
+# stuck run during a quiet period (no new pushes) would otherwise sit unnoticed
+# indefinitely — this closes that gap. timeout-minutes on the deploy job (also
+# in deploy.yml) does NOT cover this: it only bounds a job once it's executing
+# on a runner, not while stuck pending an environment gate — this watchdog is
+# what actually covers that state.
+#
+# Known limitation: GitHub can automatically disable scheduled workflows after
+# ~60 days of repository inactivity. On a low-commit-cadence project this
+# watchdog could itself go dormant; it re-enables on the next push, or can be
+# re-enabled manually from the Actions tab.
+
+name: Deploy Watchdog
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+# Prevent two watchdog cycles from ever acting on the same stuck run at once —
+# without this, an overlapping run (e.g. this one hangs past the next 15-minute
+# tick) could double-cancel/double-dispatch/double-report.
+concurrency:
+  group: deploy-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check-stuck-deploys:
+    runs-on: ubuntu-latest
+    # Comfortably under the 15-minute schedule interval, so a hung watchdog run
+    # itself can't stack up against the concurrency group above.
+    timeout-minutes: 5
+    steps:
+      - name: Find, cancel, and re-trigger stuck deploy runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # No checkout step in this job, so `gh` has no local git remote to infer
+          # the repository from — GH_REPO makes every gh call explicit instead.
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # GitHub Actions runs an unspecified-shell `run:` step as `bash -e {0}` —
+          # errexit is ON by default, and `set -uo pipefail` alone does NOT turn it
+          # off (it only touches -u and -o pipefail; -e keeps whatever state it
+          # already had). Every "assign a variable from a command substitution,
+          # then check $? on the next line" pattern below relies on the script
+          # surviving that command's failure — under the default -e, it does not:
+          # a failing command substitution as a plain assignment kills the step
+          # immediately, and the $? line is never reached. Explicitly disabling -e
+          # here was verified locally to be the difference between "after" printing
+          # and the whole script dying silently one line earlier.
+          set +e -u -o pipefail
+
+          THRESHOLD_MINUTES=20
+          NOW_EPOCH=$(date -u +%s)
+          # The workflow's file name, not its display name — a stable identifier
+          # that survives a future rename of the `name:` field.
+          WORKFLOW_FILE="deploy.yml"
+          WATCHDOG_ISSUE_SEARCH='"Deploy watchdog" in:title'
+
+          # ── Shared helpers ────────────────────────────────────────────────────
+
+          # Attempts to dispatch a fresh deploy, guarded against racing a run
+          # that's already active. Sets (global) DISPATCH_OK and DISPATCH_NOTE.
+          # Used both right after cancelling a stuck run, and again on a later
+          # cycle retrying an incident whose original stuck run is already gone
+          # but whose replacement was never confirmed to have succeeded.
+          try_dispatch() {
+            local active_run="" lookup_failed=false found_run check_status
+            for check_status in queued waiting pending requested in_progress; do
+              found_run=$(gh run list --workflow="$WORKFLOW_FILE" --status "$check_status" \
+                --json databaseId --limit 1 --jq '.[0].databaseId // empty')
+              if [ $? -ne 0 ]; then
+                lookup_failed=true
+                break
+              fi
+              if [ -n "$found_run" ]; then
+                active_run="$found_run"
+                break
+              fi
+            done
+            if [ "$lookup_failed" = true ]; then
+              # Don't assume "no active run" on a failed lookup — that's exactly
+              # the assumption that would let this dispatch race a healthy deploy.
+              DISPATCH_OK=false
+              DISPATCH_NOTE="Skipped re-trigger: failed to check for an active/pending run before dispatching — could not confirm it's safe to redispatch."
+            elif [ -n "$active_run" ]; then
+              DISPATCH_OK=true
+              DISPATCH_NOTE="Skipped re-trigger: run $active_run is already active — a fresh deploy appears underway already, redispatching now would risk cancelling it."
+            elif gh workflow run "$WORKFLOW_FILE"; then
+              DISPATCH_OK=true
+              DISPATCH_NOTE=""
+            else
+              DISPATCH_OK=false
+              DISPATCH_NOTE="Re-trigger (gh workflow run) failed."
+            fi
+          }
+
+          # Builds /tmp/issue_body.txt describing this cycle's outcome, including
+          # the machine-readable marker a later cycle's recovery check depends on.
+          # $1: the leading description of what happened this cycle.
+          build_issue_body() {
+            {
+              echo "$1"
+              echo ""
+              [ -n "$CANCELLED_OK" ] && echo "Cancelled successfully:$CANCELLED_OK"
+              [ -n "$CANCEL_FAILURES" ] && echo "**FAILED to cancel:**$CANCEL_FAILURES — these may still be holding the pages concurrency group."
+              echo ""
+              if [ "$DISPATCH_OK" = true ] && [ -z "$DISPATCH_NOTE" ]; then
+                echo "A fresh deploy was re-triggered. This only confirms GitHub accepted the dispatch, not that it succeeded — this issue stays open until a later check confirms the deploy actually completed successfully."
+              elif [ "$DISPATCH_OK" = true ]; then
+                echo "$DISPATCH_NOTE"
+              else
+                echo "**$DISPATCH_NOTE**"
+              fi
+              echo ""
+              # This cycle's start time, captured before any cancel/dispatch action
+              # above. A later cycle's recovery check requires the successful run
+              # confirming recovery to postdate this marker — otherwise an older,
+              # unrelated success still sitting as "most recent completed" could be
+              # mistaken for confirmation while the real replacement is still
+              # pending or never got dispatched.
+              echo "<!-- watchdog-cycle-time: $NOW_EPOCH -->"
+            } > /tmp/issue_body.txt
+          }
+
+          # Reports this cycle's outcome to the incident issue, creating one only
+          # if none exists yet. Sets (global) ISSUE_NUMBER and REPORT_OK. Retries
+          # `gh issue create` a few times — a transient Issues API failure here,
+          # left unretried, could otherwise mean an incident that self-resolves
+          # before the next cycle leaves no record anywhere except a failed job
+          # run buried in Actions history.
+          report_incident() {
+            local existing_issue lookup_failed create_url attempt
+            existing_issue=$(gh issue list --search "$WATCHDOG_ISSUE_SEARCH" --state open --json number --jq '.[0].number // empty')
+            lookup_failed=$?
+            ISSUE_NUMBER=""
+            REPORT_OK=true
+
+            if [ "$lookup_failed" -ne 0 ]; then
+              # Don't fall through to `gh issue create` on a failed lookup — we
+              # genuinely don't know whether an open issue already exists, and
+              # blindly creating one risks exactly the duplicate this idempotency
+              # check exists to prevent.
+              echo "::warning::gh issue list lookup failed — skipping issue create/comment this cycle to avoid a possible duplicate"
+              REPORT_OK=false
+              return
+            fi
+
+            if [ -n "$existing_issue" ]; then
+              ISSUE_NUMBER="$existing_issue"
+              if ! gh issue comment "$ISSUE_NUMBER" --body-file /tmp/issue_body.txt; then
+                echo "::warning::Failed to comment on existing issue #$ISSUE_NUMBER"
+                REPORT_OK=false
+              fi
+              return
+            fi
+
+            attempt=0
+            while [ "$attempt" -lt 3 ]; do
+              create_url=$(gh issue create --title "Deploy watchdog: stuck deploy run(s) detected" \
+                --body-file /tmp/issue_body.txt)
+              if [ $? -eq 0 ] && [ -n "$create_url" ]; then
+                ISSUE_NUMBER="${create_url##*/}"
+                return
+              fi
+              attempt=$((attempt + 1))
+              [ "$attempt" -lt 3 ] && sleep 3
+            done
+            echo "::warning::Issue creation failed after 3 attempts"
+            REPORT_OK=false
+          }
+
+          # ── Discover stuck runs ──────────────────────────────────────────────
+
+          # Query each pre-execution status separately, server-side, rather than
+          # fetching one fixed-size window across all statuses and filtering
+          # client-side — a stuck run can't drop out of a status-scoped query no
+          # matter how many completed/cancelled runs have piled up since it got
+          # stuck. 100 per status is enormously more than this repo could ever
+          # realistically accumulate in a single non-terminal status between
+          # 15-minute checks.
+          LIST_FAILED=false
+          PAGES=()
+          for RUN_STATUS in queued waiting pending requested; do
+            PAGE_JSON=$(gh run list --workflow="$WORKFLOW_FILE" --status "$RUN_STATUS" \
+              --json databaseId,status,createdAt,url --limit 100)
+            if [ $? -ne 0 ]; then
+              echo "::error::gh run list --status $RUN_STATUS failed"
+              LIST_FAILED=true
+              continue
+            fi
+            PAGES+=("$PAGE_JSON")
+          done
+          # Slurp each status's independent JSON array from stdin and flatten them
+          # into one combined array, rather than repeatedly re-parsing an
+          # accumulator variable.
+          RUNS_JSON=$(printf '%s\n' "${PAGES[@]}" | jq -c -s 'add')
+
+          if [ "$LIST_FAILED" = true ]; then
+            echo "::error::One or more run-list queries failed — cannot reliably check for stuck runs this cycle"
+            exit 1
+          fi
+
+          STUCK_JSON=$(echo "$RUNS_JSON" | jq -c --argjson threshold "$((THRESHOLD_MINUTES * 60))" --argjson now "$NOW_EPOCH" '
+            [.[] | select(($now - (.createdAt | fromdateiso8601)) > $threshold)]
+          ')
+          STUCK_COUNT=$(echo "$STUCK_JSON" | jq 'length')
+
+          # ── No stuck run found this cycle ────────────────────────────────────
+          if [ "$STUCK_COUNT" -eq 0 ]; then
+            echo "No stuck deploy runs found."
+
+            EXISTING_ISSUE=$(gh issue list --search "$WATCHDOG_ISSUE_SEARCH" --state open --json number --jq '.[0].number // empty')
+            if [ $? -ne 0 ]; then
+              echo "::warning::gh issue list lookup failed — skipping recovery check this cycle"
+              exit 0
+            fi
+            if [ -z "$EXISTING_ISSUE" ]; then
+              exit 0
+            fi
+
+            # There's an open incident from an earlier cycle. Search every
+            # comment (newest first), then the body, for the most recent text
+            # that actually contains a watchdog marker — not just the last
+            # comment, which could just as easily be a maintainer's own note on
+            # the open incident with no marker at all. Trusting .comments[-1]
+            # unconditionally would mean a single human comment on the issue
+            # permanently breaks auto-close, since no later cycle would ever
+            # find a marker again. Candidates are base64-encoded so embedded
+            # newlines in comment text can't be misread as separators.
+            INCIDENT_EPOCH=""
+            CANDIDATES_B64=$(gh issue view "$EXISTING_ISSUE" --json body,comments --jq '
+              ([.comments | reverse | .[].body] + [.body])[] | @base64
+            ' 2>/dev/null)
+            while IFS= read -r CANDIDATE_B64; do
+              [ -z "$CANDIDATE_B64" ] && continue
+              CANDIDATE_TEXT=$(echo "$CANDIDATE_B64" | base64 -d 2>/dev/null)
+              CANDIDATE_EPOCH=$(echo "$CANDIDATE_TEXT" | grep -o 'watchdog-cycle-time: [0-9]*' | grep -o '[0-9]*$' | tail -1)
+              if [ -n "$CANDIDATE_EPOCH" ]; then
+                INCIDENT_EPOCH="$CANDIDATE_EPOCH"
+                break
+              fi
+            done <<< "$CANDIDATES_B64"
+
+            LATEST_RUN_JSON=$(gh run list --workflow="$WORKFLOW_FILE" --status completed \
+              --json conclusion,createdAt --limit 1)
+            LATEST_CONCLUSION=$(echo "$LATEST_RUN_JSON" | jq -r '.[0].conclusion // empty')
+            LATEST_CREATED=$(echo "$LATEST_RUN_JSON" | jq -r '.[0].createdAt // empty')
+            LATEST_EPOCH=""
+            [ -n "$LATEST_CREATED" ] && LATEST_EPOCH=$(date -u -d "$LATEST_CREATED" +%s 2>/dev/null)
+
+            # Require the successful run to postdate this incident's own
+            # remediation attempt — otherwise an older, unrelated success sitting
+            # as "most recent completed" would be mistaken for confirmation.
+            if [ "$LATEST_CONCLUSION" = "success" ] && [ -n "$LATEST_EPOCH" ] && [ -n "$INCIDENT_EPOCH" ] && [ "$LATEST_EPOCH" -ge "$INCIDENT_EPOCH" ]; then
+              echo "Deploy created $LATEST_CREATED succeeded and postdates the incident — closing issue #$EXISTING_ISSUE"
+              if ! gh issue close "$EXISTING_ISSUE" \
+                --comment "Recovered: a deploy created after this incident's remediation attempt completed successfully."; then
+                echo "::warning::Failed to close issue #$EXISTING_ISSUE"
+                exit 1
+              fi
+              exit 0
+            fi
+
+            # Not confirmed recovered yet. The original stuck run is gone from
+            # this cycle's scan (that's why we're in this branch at all), but we
+            # don't know whether a replacement was ever successfully dispatched
+            # — retry now, guarded the same way as the original attempt, rather
+            # than only checking and leaving the site on the old revision
+            # through a quiet period with no further pushes.
+            echo "Issue #$EXISTING_ISSUE stays open — no completed run created after the incident (marker epoch: ${INCIDENT_EPOCH:-none}) has succeeded yet (latest completed: conclusion=$LATEST_CONCLUSION, created=$LATEST_CREATED). Retrying dispatch."
+            CANCELLED_OK=""
+            CANCEL_FAILURES=""
+            try_dispatch
+            build_issue_body "Retrying the deploy re-trigger for this open incident — the original stuck run is no longer pending, but no completed run since the incident began has succeeded yet."
+            ISSUE_NUMBER="$EXISTING_ISSUE"
+            REPORT_OK=true
+            if ! gh issue comment "$ISSUE_NUMBER" --body-file /tmp/issue_body.txt; then
+              echo "::warning::Failed to comment on existing issue #$ISSUE_NUMBER"
+              REPORT_OK=false
+            fi
+
+            if [ "$DISPATCH_OK" = false ] || [ "$REPORT_OK" = false ]; then
+              exit 1
+            fi
+            exit 0
+          fi
+
+          # ── Stuck run(s) found — cancel, settle, and dispatch a replacement ──
+
+          echo "Found $STUCK_COUNT stuck run(s):"
+          echo "$STUCK_JSON" | jq -r '.[] | "  \(.databaseId) — \(.status) since \(.createdAt) — \(.url)"'
+
+          CANCELLED_OK=""
+          CANCEL_FAILURES=""
+          while read -r id; do
+            # The IDs above were captured at the start of this cycle — a run can
+            # transition to in_progress (or even complete) in the time between
+            # that scan and this cancellation. Re-check right before acting so a
+            # run that started executing normally isn't cancelled out from under
+            # itself, which would break the documented promise to leave running
+            # deploys alone.
+            CURRENT_STATUS=$(gh run view "$id" --json status --jq '.status' 2>/dev/null)
+            STATUS_CHECK_FAILED=$?
+            if [ "$STATUS_CHECK_FAILED" -ne 0 ] || [ -z "$CURRENT_STATUS" ]; then
+              # Can't confirm this run hasn't since started executing — treat as
+              # unsafe to touch rather than falling back to a blind cancel, which
+              # could kill a healthy deploy on nothing more than a transient read
+              # failure. Leave it for a later cycle instead (it'll still show up
+              # in the next scan if it's genuinely still stuck).
+              echo "::warning::Could not confirm current status of run $id — leaving it for a later cycle rather than cancelling blindly"
+              CANCEL_FAILURES="$CANCEL_FAILURES $id"
+              continue
+            fi
+            if [ "$CURRENT_STATUS" = "in_progress" ] || [ "$CURRENT_STATUS" = "completed" ]; then
+              echo "Run $id is now '$CURRENT_STATUS' — no longer stuck, leaving it alone"
+              continue
+            fi
+            if gh run cancel "$id"; then
+              CANCELLED_OK="$CANCELLED_OK $id"
+            else
+              CANCEL_FAILURES="$CANCEL_FAILURES $id"
+            fi
+          done < <(echo "$STUCK_JSON" | jq -r '.[].databaseId')
+
+          # `gh run cancel` only requests cancellation — it can return before the
+          # run actually reaches a terminal state. Dispatching immediately could
+          # still queue the replacement behind a run that hasn't finished
+          # transitioning out of the concurrency group yet, which is exactly the
+          # queueing failure this watchdog exists to clear. Poll each cancelled
+          # run briefly for a terminal (completed) status before proceeding.
+          CANCEL_SETTLED=true
+          if [ -n "$CANCELLED_OK" ]; then
+            for id in $CANCELLED_OK; do
+              SETTLED=false
+              for i in 1 2 3 4 5 6; do
+                RUN_STATUS=$(gh run view "$id" --json status --jq '.status' 2>/dev/null)
+                if [ "$RUN_STATUS" = "completed" ]; then
+                  SETTLED=true
+                  break
+                fi
+                sleep 5
+              done
+              if [ "$SETTLED" = false ]; then
+                echo "::warning::Run $id did not reach a terminal state within ~30s of cancelling — may still hold the concurrency lock"
+                CANCEL_SETTLED=false
+              fi
+            done
+          fi
+
+          DISPATCH_OK=true
+          DISPATCH_NOTE=""
+          if [ -n "$CANCEL_FAILURES" ]; then
+            # Don't claim success or re-dispatch if a stuck run might still be
+            # holding the pages concurrency group — that would just queue a new
+            # run behind it, right back where this incident started.
+            DISPATCH_OK=false
+            DISPATCH_NOTE="Skipped re-trigger: failed to cancel run(s):$CANCEL_FAILURES — they may still hold the concurrency lock."
+          elif [ "$CANCEL_SETTLED" = false ]; then
+            DISPATCH_OK=false
+            DISPATCH_NOTE="Skipped re-trigger: cancelled run(s) did not settle to a terminal state in time — may still hold the concurrency lock."
+          elif [ -z "$CANCELLED_OK" ]; then
+            # Every originally-stuck run resolved on its own (transitioned to
+            # in_progress or completed) before we got to cancel any of them —
+            # nothing left to remediate, so there's nothing to redispatch either.
+            DISPATCH_OK=true
+            DISPATCH_NOTE="No redispatch needed: all originally-stuck run(s) resolved on their own before cancellation was attempted."
+          else
+            try_dispatch
+          fi
+
+          build_issue_body "The deploy watchdog detected $STUCK_COUNT run(s) stuck pending execution for over $THRESHOLD_MINUTES minutes."
+          report_incident
+
+          # A stuck run was found — fail this job visibly (rather than a
+          # misleadingly green checkmark) if cancellation, re-dispatch, or the
+          # incident report itself didn't fully succeed, so the Actions tab always
+          # signals unresolved trouble instead of claiming success on a partial run.
+          if [ -n "$CANCEL_FAILURES" ] || [ "$DISPATCH_OK" = false ] || [ "$REPORT_OK" = false ]; then
+            exit 1
+          fi
