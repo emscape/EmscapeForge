@@ -278,6 +278,14 @@ jobs:
             CANDIDATES_B64=$(gh issue view "$EXISTING_ISSUE" --json body,comments --jq '
               ([.comments | reverse | .[] | select(.author.login == "github-actions" or .author.login == "github-actions[bot]") | .body] + [.body])[] | @base64
             ' 2>/dev/null)
+            if [ $? -ne 0 ]; then
+              # Same failure-mode class as the gh run list check below: an
+              # unknown issue state must not be treated as "no marker found",
+              # which would fall through to try_dispatch and launch a deploy
+              # with zero evidence of whether this incident actually needs one.
+              echo "::warning::gh issue view failed — leaving issue #$EXISTING_ISSUE for a later cycle rather than guessing at recovery"
+              exit 0
+            fi
             while IFS= read -r CANDIDATE_B64; do
               [ -z "$CANDIDATE_B64" ] && continue
               CANDIDATE_TEXT=$(echo "$CANDIDATE_B64" | base64 -d 2>/dev/null)
