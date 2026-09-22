@@ -85,7 +85,11 @@ jobs:
           # The workflow's file name, not its display name — a stable identifier
           # that survives a future rename of the `name:` field.
           WORKFLOW_FILE="deploy.yml"
-          WATCHDOG_ISSUE_SEARCH='"Deploy watchdog" in:title'
+          # Restricted to issues the watchdog itself created — without this,
+          # a human-authored issue that happens to match the title text could
+          # be mistaken for an open incident, and (worse) anyone able to
+          # comment on it could inject a fake recovery marker (see below).
+          WATCHDOG_ISSUE_SEARCH='"Deploy watchdog" in:title author:app/github-actions'
 
           # ── Shared helpers ────────────────────────────────────────────────────
 
@@ -250,17 +254,29 @@ jobs:
             fi
 
             # There's an open incident from an earlier cycle. Search every
-            # comment (newest first), then the body, for the most recent text
-            # that actually contains a watchdog marker — not just the last
-            # comment, which could just as easily be a maintainer's own note on
-            # the open incident with no marker at all. Trusting .comments[-1]
-            # unconditionally would mean a single human comment on the issue
-            # permanently breaks auto-close, since no later cycle would ever
-            # find a marker again. Candidates are base64-encoded so embedded
-            # newlines in comment text can't be misread as separators.
+            # comment (newest first) authored by this workflow's own bot
+            # identity, then the body, for the most recent text that actually
+            # contains a watchdog marker — not just the last comment, which
+            # could just as easily be a maintainer's own note on the open
+            # incident with no marker at all (breaking auto-close permanently,
+            # since no later cycle would ever find a marker again), or, worse,
+            # a comment from anyone else able to comment on the issue
+            # containing a forged `watchdog-cycle-time: 0` marker that would
+            # make any later successful deploy look like confirmed recovery
+            # and suppress a real, still-open incident. Restricting to
+            # github-actions[bot]-authored comments (plus the body, which only
+            # the bot itself ever creates) closes that off. Candidates are
+            # base64-encoded so embedded newlines in comment text can't be
+            # misread as separators.
             INCIDENT_EPOCH=""
+            # Matches both login spellings gh's GraphQL-backed --json output has
+            # been observed to use for this identity ("github-actions" and
+            # "github-actions[bot]") — hedges against an exact-format guess
+            # since no watchdog issue has existed yet to check this against
+            # directly; the fallback fails safe (an issue just never
+            # auto-closes) rather than failing open.
             CANDIDATES_B64=$(gh issue view "$EXISTING_ISSUE" --json body,comments --jq '
-              ([.comments | reverse | .[].body] + [.body])[] | @base64
+              ([.comments | reverse | .[] | select(.author.login == "github-actions" or .author.login == "github-actions[bot]") | .body] + [.body])[] | @base64
             ' 2>/dev/null)
             while IFS= read -r CANDIDATE_B64; do
               [ -z "$CANDIDATE_B64" ] && continue
@@ -274,6 +290,15 @@ jobs:
 
             LATEST_RUN_JSON=$(gh run list --workflow="$WORKFLOW_FILE" --status completed \
               --json conclusion,createdAt --limit 1)
+            if [ $? -ne 0 ]; then
+              # An unknown result must not be treated as "not recovered yet" —
+              # that path falls through to try_dispatch below and would launch
+              # a redundant deploy with zero evidence the previous replacement
+              # actually failed. Leave the incident exactly as-is for a later
+              # cycle instead of guessing.
+              echo "::warning::gh run list (completed) failed — leaving issue #$EXISTING_ISSUE for a later cycle rather than guessing at recovery"
+              exit 0
+            fi
             LATEST_CONCLUSION=$(echo "$LATEST_RUN_JSON" | jq -r '.[0].conclusion // empty')
             LATEST_CREATED=$(echo "$LATEST_RUN_JSON" | jq -r '.[0].createdAt // empty')
             LATEST_EPOCH=""
