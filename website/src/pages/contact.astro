@@ -225,7 +225,8 @@ const web3formsKey = config.contact.web3formsKey;
     p, li {
       font-size: 0.95rem;
       line-height: 1.6;
-      opacity: 0.8;
+      // Fade the text color rather than the element, so links inside keep full contrast
+      color: color-mix(in srgb, var(--color-text) 80%, transparent);
     }
 
     ol {
