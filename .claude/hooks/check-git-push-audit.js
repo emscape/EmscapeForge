@@ -29,7 +29,7 @@ const { isGitPush } = require('./lib/git-command.cjs');
 // Generic (non-vendor-specific) patterns keep a low length floor (8 chars
 // for credentials, 4 for passwords): real secrets shorter than 20 chars
 // exist, and a higher floor silently lets them through. Short, human-
-// readable test fixtures like `apiKey: 'test-api-key'` are handled with a
+// readable test fixtures (an `apiKey` set to 'test-api-key') are handled with a
 // trailing `// nosecret` comment on that line (see Check 1) rather than by
 // weakening the patterns. The vendor-specific patterns below (Google/
 // OpenAI/GitHub/Slack/AWS) match exact real-world formats.
