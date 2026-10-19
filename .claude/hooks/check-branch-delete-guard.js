@@ -16,8 +16,8 @@
 //   .claude/hooks/config.json → branch_delete_guard.enabled
 //
 // Algorithm:
-//   1. Skip entirely if branch_delete_guard.enabled is false in config.json
-//      (config.json missing/invalid → treated as enabled, same fail-open
+//   1. Skip entirely if branch_delete_guard.enabled is false in the SHARED config.json
+//      (a project-local hooks.config.json cannot disable it; config.json missing/invalid → treated as enabled, same fail-open
 //      spirit as the gh-unavailable case below — a missing config must
 //      never silently disable a safety check).
 //   2. Only fires on an actual `git push ... --delete <branch>...` (any
@@ -37,15 +37,13 @@
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const { execSync } = require('child_process');
-
-const CONFIG_PATH = path.resolve(__dirname, 'config.json');
+const { loadHookConfig } = require('./lib/hook-config.cjs');
+const { commandSegments, stripLeadingEnvPrefix, stripSurroundingQuotes } = require('./lib/git-command.cjs');
 
 function isEnabled() {
   try {
-    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    const config = loadHookConfig({ hooksDir: __dirname });
     // Absent key defaults to enabled — only an explicit `false` opts out,
     // matching the "fail open on missing config, not on missing setting"
     // distinction: a config file that exists but never mentions this guard
@@ -89,83 +87,18 @@ function tryRun(cmd) {
 // Also handles the older `:branch` refspec shorthand independently, since
 // that doesn't need a --delete/-d flag at all.
 //
-// Known limitations:
-//   - Segment splitting is not quote-aware, so a chain operator sitting
-//     inside a quoted string (rare, and not the scenario above — that one
-//     only involved "git push" itself inside quotes) can still split
-//     mid-string. Any resulting false-positive segment errs toward
-//     blocking, not toward silently allowing a real delete, which is the
-//     safe direction for a security check.
+// Segment splitting and normalization (env/sudo prefixes, `bash -c`
+// wrappers, a path-qualified git binary, `git -C <dir>` and other global
+// options) come from lib/git-command.cjs, shared with check-merge-guard.js
+// so the two guards recognize the same set of push forms.
+//
+// Known limitation:
 //   - If a remote is omitted entirely (relying on push.default / an
 //     upstream tracking branch), the first branch name would be mistaken
 //     for the remote and skipped. Rare enough in practice (this
 //     codebase's own workflow always names the remote explicitly) not to
 //     be worth the added complexity of distinguishing a remote name from
 //     a branch name with no ground truth to check against.
-
-// Matches one leading `VAR=value` assignment, where value is a double- or
-// single-quoted string (which may contain spaces, e.g. `GIT_SSH_COMMAND="ssh
-// -vv"`) or an unquoted run of non-whitespace. Quoted values must be
-// recognized as a single token — a plain `\S*` value pattern stops at the
-// first space *inside* the quotes, leaving a dangling `-vv"` that can't
-// match anything else, which silently broke stripping for exactly this
-// (common — GIT_SSH_COMMAND, GIT_TRACE, GIT_CURL_VERBOSE all take
-// space-containing values in practice) case.
-const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s*/;
-
-// `env`'s own option surface, beyond the bare command it's stripping down
-// to. GNU env accepts several flags before the VAR=value assignments and
-// the real command — a delete push prefixed with any of these (most
-// plausibly `-u`/`--unset`, e.g. `env -u GIT_SSH_COMMAND git push ...`)
-// would otherwise leave a segment that doesn't start with "git" and never
-// gets recognized as a push at all.
-const ENV_NO_ARG_FLAG = /^(?:-i|--ignore-environment|-0|--null|-v|--debug)\s*/;
-const ENV_ARG_FLAG_SEPARATE = /^(?:-u|--unset|-C|--chdir|-S|--split-string)\s+(?:"[^"]*"|'[^']*'|\S*)\s*/;
-const ENV_ARG_FLAG_COMBINED = /^(?:--unset|--chdir|--split-string)=(?:"[^"]*"|'[^']*'|\S*)\s*/;
-const ENV_END_OPTIONS = /^--\s+/;
-
-// Strips a leading `env` invocation (including its own flags, with or
-// without a value) and/or any number of leading `VAR=value` assignments so
-// `GIT_TRACE=1 git push origin --delete branch` and
-// `env -u GIT_SSH_COMMAND git push origin --delete branch` are both
-// recognized as the git push invocations they are, instead of being
-// skipped because the segment doesn't start with the literal string
-// "git". Both forms are ordinary ways to adjust the environment for one
-// command and are common enough (debugging a push, CI scripts) that
-// skipping them would be a real, easy-to-hit bypass of the guard rather
-// than a theoretical one.
-function stripLeadingEnvPrefix(segment) {
-  let s = segment.replace(/^env(?=\s|$)\s*/, '');
-  // Loop (rather than a single repeated group) so any mix, order, and
-  // count of env flags and VAR=value assignments preceding the real
-  // command are all consumed, not just the first one.
-  let prev;
-  do {
-    prev = s;
-    s = s
-      .replace(ENV_END_OPTIONS, '')
-      .replace(ENV_ARG_FLAG_COMBINED, '')
-      .replace(ENV_ARG_FLAG_SEPARATE, '')
-      .replace(ENV_NO_ARG_FLAG, '')
-      .replace(ENV_ASSIGNMENT, '');
-  } while (s !== prev);
-  return s;
-}
-
-// Whitespace-splitting a shell command doesn't understand quoting, so a
-// quoted argument like `"branch"` or `':branch'` keeps its literal quote
-// characters as part of the token. Strips one matching pair of surrounding
-// quotes, if present, before a captured name is compared against anything.
-function stripSurroundingQuotes(token) {
-  if (token.length >= 2) {
-    const first = token[0];
-    const last = token[token.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return token.slice(1, -1);
-    }
-  }
-  return token;
-}
 
 // `git push origin :refs/heads/some-branch` is equivalent to
 // `git push origin :some-branch` — git accepts the fully-qualified ref on
@@ -180,9 +113,7 @@ function normalizeBranchName(name) {
 function extractDeletedBranches(fullCmd) {
   const branches = new Set();
 
-  const segments = fullCmd.split(/&&|\|\||[;&|]/);
-  for (const rawSegment of segments) {
-    const segment = stripLeadingEnvPrefix(rawSegment.trim());
+  for (const { normalized: segment } of commandSegments(fullCmd)) {
     // Anchored at the start of the segment — "contains git push" isn't
     // enough, since that also matches inside an unrelated quoted string
     // that merely mentions it.

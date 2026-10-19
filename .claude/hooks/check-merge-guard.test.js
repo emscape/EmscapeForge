@@ -360,4 +360,33 @@ test('findMergeReason', async (t) => {
   await t.test('npm test is not flagged', () => {
     assert.equal(blocked('npm test'), false);
   });
+
+  await t.test('git -C with a double-quoted path containing spaces, pushing to main', () => {
+    assert.equal(blocked('git -C "C:\\Work Tree" push origin main', onFeatureBranch), true);
+  });
+
+  await t.test('git -C with a single-quoted path containing spaces, pushing to master', () => {
+    assert.equal(blocked("git -C '/work tree' push origin feature:master", onFeatureBranch), true);
+  });
+
+  await t.test('git -c with a quoted value containing spaces, pushing to main', () => {
+    assert.equal(blocked('git -c core.sshCommand="ssh -v" push origin main', onFeatureBranch), true);
+  });
+
+  await t.test('git -C with a quoted path, pushing a feature branch, is not flagged', () => {
+    assert.equal(blocked('git -C "C:\\Work Tree" push origin feature', onFeatureBranch), false);
+  });
+
+  await t.test('env-prefixed shell wrapper around gh pr merge', () => {
+    assert.equal(blocked('env bash -c "gh pr merge 27"'), true);
+  });
+
+  await t.test('sudo- or assignment-prefixed shell wrapper around gh pr merge', () => {
+    assert.equal(blocked("sudo sh -c 'gh pr merge 27'"), true);
+    assert.equal(blocked('GH_TOKEN=x bash -c "gh pr merge 27"'), true);
+  });
+
+  await t.test('nested wrappers with prefixes at each level', () => {
+    assert.equal(blocked('env bash -c "sudo sh -c \\"gh pr merge 27\\""'), true);
+  });
 });

@@ -131,4 +131,26 @@ test('extractDeletedBranches', async (t) => {
   await t.test('an unrelated command is not flagged', () => {
     assert.deepEqual(branches('git status'), []);
   });
+
+  await t.test('a sudo-wrapped delete is detected', () => {
+    assert.deepEqual(branches('sudo git push origin --delete branch22'), ['branch22']);
+  });
+
+  await t.test('a path-qualified git binary is detected', () => {
+    assert.deepEqual(branches('/usr/bin/git push origin --delete branch23'), ['branch23']);
+    assert.deepEqual(branches('"C:\\Program Files\\Git\\bin\\git.exe" push origin :branch24'), ['branch24']);
+  });
+
+  await t.test('git global options before push are skipped, including a quoted -C path with spaces', () => {
+    assert.deepEqual(branches('git -C repo push origin --delete branch25'), ['branch25']);
+    assert.deepEqual(branches('git -C "C:\\Work Tree" push origin --delete branch26'), ['branch26']);
+  });
+
+  await t.test('a delete inside a bash -c wrapper, behind env, is detected', () => {
+    assert.deepEqual(branches("env bash -c 'git push origin --delete branch27'"), ['branch27']);
+  });
+
+  await t.test('a chain operator inside a quoted commit message does not create a fake delete', () => {
+    assert.deepEqual(branches('git commit -m "x && git push origin --delete branch28"'), []);
+  });
 });

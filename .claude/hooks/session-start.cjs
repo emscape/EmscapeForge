@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * session-start.cjs
- * Hook type : UserPromptSubmit (invoked by session-start.sh)
+ * Hook type : SessionStart (also runnable manually, or via session-start.sh)
  * Purpose   : Print project orientation at the start of a session so Claude
  *             Code has architectural context without re-reading CLAUDE.md.
- *             All content is driven by config.json — no hardcoded project info.
+ *             All content is driven by config.json (plus an optional project-local — .claude/hooks.config.json override) - no hardcoded project info.
  *
  * Why this exists as a separate .cjs file rather than inline `node -e` calls
  * in session-start.sh: embedding a shell-resolved path (from `pwd` in Git
@@ -19,11 +19,11 @@
 
 const path = require("node:path");
 
-const CONFIG_PATH = path.join(__dirname, "config.json");
+const { loadHookConfig, resolveProjectDir } = require("./lib/hook-config.cjs");
 
 function loadConfig() {
   try {
-    return require(CONFIG_PATH);
+    return loadHookConfig({ hooksDir: __dirname });
   } catch {
     return null;
   }
@@ -50,7 +50,7 @@ function main() {
     return;
   }
 
-  const projectName = config.project_name ?? "Unnamed Project";
+  const projectName = config.project_name ?? path.basename(resolveProjectDir());
   const archEnabled = Boolean(config.arch_rules?.enabled);
   const contentEnabled = Boolean(config.content_watch?.enabled);
   const notes = config.session_start?.custom_notes ?? [];
@@ -84,7 +84,8 @@ function main() {
   console.log("  • dep-guard warning on Bash installs");
   console.log(`  • content validation on file write (${contentEnabled ? "ENABLED" : "disabled"})`);
   console.log("");
-  console.log("  Configure: .claude/hooks/config.json");
+  console.log("  Shared defaults: .claude/hooks/config.json");
+  console.log("  Project settings: .claude/hooks.config.json (optional override)");
   console.log(bar);
   console.log("");
 }

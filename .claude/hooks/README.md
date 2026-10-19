@@ -10,7 +10,9 @@ All behavior is controlled by **`config.json`** — no project logic is hardcode
 
 | File | Purpose |
 |---|---|
-| `config.json` | All project-specific configuration lives here |
+| `config.json` | Shared defaults for the config-aware hooks; four hooks ignore it (see "Hooks that ignore config") (per-project overrides: `<project>/.claude/hooks.config.json`, see "Project-local overrides") |
+| `lib/hook-config.cjs` | Shared loader: reads `config.json` from the hooks directory and merges the optional project-local override over it |
+| `lib/git-command.cjs` | Shared command parser for the git/gh guards (merge, branch-delete, push-audit, CI status): quote-aware segment splitting, env/sudo/`bash -c` unwrapping, path-qualified binaries, and git/gh global options such as `git -C "<dir>"` |
 | `check-arch-boundary.js` | PreToolUse: block file writes that violate package rules |
 | `check-dep-guard.js` | PreToolUse: warn on dependency installs |
 | `check-script-exists.js` | PreToolUse: warn/block when an npm run script doesn't exist; detect no-op commands |
@@ -25,10 +27,10 @@ All behavior is controlled by **`config.json`** — no project logic is hardcode
 | `check-empty-tests.js` | PostToolUse: fail when test files have empty blocks or no assertions |
 | `check-todo-format.js` | PostToolUse: warn/block on non-conforming TODO comment format |
 | `check-ci-status-after-push.js` | PostToolUse: after a push, block until the matching GitHub Actions run completes and report the real result |
-| `session-start.sh` | UserPromptSubmit: thin wrapper that invokes session-start.cjs |
-| `session-start.cjs` | Reads config.json (via `__dirname`, not a shell-resolved path) and prints the project orientation banner |
+| `session-start.sh` | Optional manual wrapper that invokes session-start.cjs (no longer registered in hooks.json) |
+| `session-start.cjs` | SessionStart: loads config through `lib/hook-config.cjs` and prints the project orientation banner (project name defaults to the project directory basename) |
 | `hooks.json` | Human-readable reference copy of the settings.json hooks block |
-| `check-branch-delete-guard.test.js`, `check-merge-guard.test.js` | Behavioral tests for the pure detection/extraction logic each guard exports — run with `node --test .claude/hooks/` |
+| `check-branch-delete-guard.test.js`, `check-merge-guard.test.js`, `check-git-push-audit.test.js`, `check-ci-status-after-push.test.js`, `lib/git-command.test.cjs` | Behavioral tests for the pure detection/extraction logic each guard exports — run with `node --test .claude/hooks/` |
 
 The actual hook registration lives in **`.claude/settings.json`**, not `hooks.json`.
 
@@ -42,22 +44,24 @@ The actual hook registration lives in **`.claude/settings.json`**, not `hooks.js
 cp -r .claude/hooks/ <your-project>/.claude/hooks/
 ```
 
-### 2. Edit config.json
+### 2. Configure the project
 
-Open `.claude/hooks/config.json` and update:
+`.claude/hooks/config.json` holds the shared defaults used by every project, so leave it alone for
+project-specific settings. Instead, create `<project>/.claude/hooks.config.json` containing only the
+keys you want to change (see "Project-local overrides" below). Available keys:
 
-- `project_name` — shown in the session banner
+- `project_name` — shown in the session banner (optional; defaults to the project directory name)
 - `arch_rules` — set `enabled: true` and define your package boundary rules
 - `content_watch` — set `enabled: true` and point to your content path + validation command
 - `dep_guard` — enabled by default, extend `warn_patterns` if needed
 - `empty_test_guard` — enabled by default, catches theater tests
 - `todo_format` — set `enabled: true` to enforce TODO comment format
 - `script_guard` — set `enabled: true` to validate npm run scripts before they run
-- `bash_description_guard` — set `enabled: true` to require terminal command explanations
-- `env_guard` — set `enabled: true` to block `.env` reads
-- `commit_guard` — set `enabled: true` to require WHY/EXPECTED in git commit messages
+- `bash_description_guard` — requires terminal command explanations; always on when registered (the hook does not read this setting yet)
+- `env_guard` — blocks `.env` reads; always on when registered (the hook does not read this setting)
+- `commit_guard` — requires WHY/EXPECTED in git commit messages; always on when registered (the hook does not read this setting yet)
 - `merge_guard` — enabled by default, unconditionally blocks any command that merges a PR or lands commits on master/main
-- `push_audit` — enabled by default, blocks pushes whose diff contains hardcoded secrets
+- `push_audit` — blocks pushes whose diff contains hardcoded secrets; always on when registered (the hook does not read this setting yet)
 - `branch_delete_guard` — enabled by default, blocks deleting a branch a stacked PR still bases off (requires `gh`)
 - `ci_status_check` — enabled by default, blocks after a push until the matching CI run completes (requires `gh`)
 - `search_guard` — enabled by default in warn mode, nudges away from raw shell `grep`/`find`/`cat`/`head`/`tail`
@@ -107,10 +111,10 @@ Merge the `hooks` block from `hooks.json` into your project's `.claude/settings.
         "hooks": [{ "type": "command", "command": "node .claude/hooks/check-ci-status-after-push.js" }]
       }
     ],
-    "UserPromptSubmit": [
+    "SessionStart": [
       {
         "matcher": "",
-        "hooks": [{ "type": "command", "command": "bash .claude/hooks/session-start.sh" }]
+        "hooks": [{ "type": "command", "command": "node .claude/hooks/session-start.cjs" }]
       }
     ]
   }
@@ -122,7 +126,7 @@ Merge the `hooks` block from `hooks.json` into your project's `.claude/settings.
 Run the session banner manually to confirm config loads correctly:
 
 ```bash
-bash .claude/hooks/session-start.sh
+node .claude/hooks/session-start.cjs
 ```
 
 ---
@@ -204,7 +208,8 @@ Require a non-empty `description` on every Bash call:
 }
 ```
 
-No fields beyond `enabled`. Blocks (exit 2) any Bash call whose `tool_input.description` is
+No fields beyond `enabled`, and `check-bash-description.js` does not read config at all, so the block is
+unconditional today and the `enabled` flag has no effect. Blocks (exit 2) any Bash call whose `tool_input.description` is
 missing or empty — enforces the WHY/WHAT terminal-command discipline before a command runs.
 
 ---
@@ -219,7 +224,8 @@ Block reads of `.env` files:
 }
 ```
 
-No fields beyond `enabled`. Blocks (exit 2) any `Read` call whose file path matches `.env` or
+No fields beyond `enabled`, and `check-env-guard.js` does not read config at all, so the block is
+unconditional today and the `enabled` flag has no effect. Blocks (exit 2) any `Read` call whose file path matches `.env` or
 `.env.*`. Environment files carry secrets and must never be read into context.
 
 ---
@@ -295,6 +301,8 @@ Audit a `git push`'s diff before it goes out:
 ```
 
 No fields beyond `enabled` (extend `check-git-push-audit.js` directly for different patterns).
+`check-git-push-audit.js` does not read config, so the audit runs whenever the hook is registered
+and the `enabled` flag has no effect.
 Runs on every `git push`, auditing the diff (staged changes, or `HEAD~1`, or the empty tree for a
 root commit) for:
 
@@ -429,6 +437,9 @@ Require WHY/EXPECTED sections in every commit message:
 - `required_markers` — every listed string must appear somewhere in the commit message
 - `on_violation` — `"warn"` prints to stderr (exit 0) | `"block"` exits 2 and rejects the tool call
 
+`check-commit-message.js` does not read config yet: whenever it is registered it requires `WHY:`
+and `EXPECTED:` and blocks (exit 2), regardless of `enabled`, `required_markers` and `on_violation`.
+
 ---
 
 ### `commands`
@@ -449,6 +460,8 @@ These appear in the session banner when populated. To auto-run a command on file
 
 ### `session_start`
 
+Printed by the SessionStart hook (`session-start.cjs`), together with the project name and a pointer to `.claude/hooks.config.json`.
+
 Control the orientation banner:
 
 ```json
@@ -458,6 +471,38 @@ Control the orientation banner:
     "All API calls go through the service layer"
   ]
 }
+```
+
+---
+
+## Project-local overrides
+
+Hooks are usually symlinked into many projects, so `config.json` is shared. A project can override
+it with an optional file at **`<project>/.claude/hooks.config.json`**. The project directory is
+resolved from `CLAUDE_PROJECT_DIR`, then the current working directory.
+
+- **Merge rules**: objects merge recursively (project keys win, shared-only keys are kept);
+  arrays, scalars and `null` in the override replace the shared value wholesale.
+- **Protected guards**: `merge_guard` and `branch_delete_guard` can be tightened or
+  tuned but never disabled. In these sections only `enabled: true` is honoured; any other
+  `enabled` value, or a section that is not an object, is ignored with a stderr warning.
+  `env_guard` is protected the same way in the loader, but `check-env-guard.js` does not read
+  config at all, so the block is unconditional and an `env_guard` override has no effect.
+- **Hooks that ignore config**: `check-bash-description.js`, `check-commit-message.js`,
+  `check-git-push-audit.js` and `check-env-guard.js` do not read config, so overrides for
+  `bash_description_guard`, `commit_guard`, `push_audit` and `env_guard` have no effect; these
+  hooks are on whenever they are registered. Every other guard reads the merged config and can be
+  disabled from a project override.
+- **Failure handling**: a missing override file is normal. An unreadable or invalid one (bad JSON,
+  not a JSON object) is ignored with a one-line stderr warning and never breaks a hook. An
+  unreadable shared `config.json` makes the loader throw, and each hook keeps its own previous
+  behaviour: most skip their check (fail open), while the safety guards (`merge_guard`,
+  `branch_delete_guard`) treat the missing config as enabled.
+- **Safety limits**: override keys named `__proto__`, `constructor` and `prototype` are dropped
+  with a warning, and an override nested deeper than 32 levels is ignored as a whole with a warning.
+
+```json
+{ "project_name": "Acme API", "dep_guard": { "enabled": false } }
 ```
 
 ---
@@ -543,7 +588,7 @@ Claude Code invokes each registered command when the matching tool is used.
 
 ## Requirements
 
-- **Node.js** (ESM support, v14.18+) — required for all `.js` hooks
+- **Node.js v22.7+** — required for all hooks. The ESM `.js` hooks rely on Node's automatic module-syntax detection (unflagged in v22.7), and `lib/hook-config.cjs` uses `structuredClone` and `Object.hasOwn`
 - **bash** — required for `session-start.sh`
 - No specific package manager assumed; any install-detecting pattern can be added to `dep_guard.warn_patterns`
 
@@ -553,9 +598,8 @@ Claude Code invokes each registered command when the matching tool is used.
 
 - `check-arch-boundary.js` checks imports in the **content being written**, not the full file on disk. It won't catch pre-existing violations.
 - `forbidden_content_pattern` is a simple regex heuristic — it can produce false positives in test files or comments.
-- `session-start.cjs` uses CJS `require(...)` to read config.json. If your Node version requires `--input-type=module` for `.cjs` (unusual), switch it to `JSON.parse(readFileSync(...))`.
 - Hooks run in the **project root** working directory. Relative paths in `validate_command` are resolved from there.
-- **Mixed module system**: `check-branch-delete-guard.js`, `check-ci-status-after-push.js`, `check-env-guard.js`, `check-git-push-audit.js`, and `check-merge-guard.js` are CommonJS (`require`); `check-dep-guard.js` and `check-search-command.js` were converted to CommonJS too (see changelog below). `check-arch-boundary.js`, `check-empty-tests.js`, `check-script-exists.js`, `check-todo-format.js`, and `validate-content.js` still use ESM `import` and will throw `Cannot use import statement outside a module` in a consuming project that has no `package.json` at all, or one without `"type": "module"` — which is the plain-scripts/non-npm case this template is otherwise meant to support out of the box. Either add a `package.json` with `"type": "module"` next to `.claude/hooks/`, or convert the file to `require(...)` the same way `check-dep-guard.js` was.
+- **Mixed module system**: `check-branch-delete-guard.js`, `check-ci-status-after-push.js`, `check-env-guard.js`, `check-git-push-audit.js`, and `check-merge-guard.js` are CommonJS (`require`); `check-dep-guard.js` and `check-search-command.js` were converted to CommonJS too (see changelog below). `check-arch-boundary.js`, `check-empty-tests.js`, `check-script-exists.js`, `check-todo-format.js`, and `validate-content.js` still use ESM `import`. On Node v22.7+ they run without any `package.json`, because Node detects the module syntax. On older Node they throw `Cannot use import statement outside a module` unless a `package.json` with `"type": "module"` sits next to `.claude/hooks/`, or the file is converted to `require(...)` the same way `check-dep-guard.js` was.
 
 ---
 
@@ -571,5 +615,8 @@ Claude Code invokes each registered command when the matching tool is used.
 | `_notes.evolution` placeholder | Removed — not actionable in a generic template |
 
 ## Changelog
+
+- Command parsing for the git/gh guards moved into `lib/git-command.cjs`. `check-branch-delete-guard.js`, `check-ci-status-after-push.js`, and `check-git-push-audit.js` previously recognized only a subset of the push forms `check-merge-guard.js` handled, so `sudo git push`, `/usr/bin/git push`, and `git -C <dir> push` skipped them. All four now share one parser. Option values are matched as whole shell words, so `git -C "C:\Work Tree" push origin main` is no longer cut off at the space, and prefixes are stripped before shell wrappers are unwrapped, so `env bash -c "gh pr merge 27"` is caught.
+- `check-git-push-audit.js` generic secret floors restored to 8 characters (credentials) and 4 (passwords), from 20 and 12. Test fixtures that trip them use the existing trailing `// nosecret` marker.
 
 - `check-dep-guard.js` and `check-search-command.js` converted from ESM (`import`) to CommonJS (`require`). Found while adapting these hooks for a project with no `package.json` at all (a scripts/Docker-Compose repo, not an npm project) — the ESM versions threw `Cannot use import statement outside a module` there. Five other hook files have the same latent issue and are documented under Known Limitations rather than converted, since nothing in this change touched them.

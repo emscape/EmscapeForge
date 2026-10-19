@@ -13,16 +13,12 @@
  *                               dep_guard.custom_message
  */
 
-const { readFileSync } = require('fs');
-const { resolve } = require('path');
-
-// ── Locate config ─────────────────────────────────────────────────────────
-const CONFIG_PATH = resolve(__dirname, 'config.json');
+const { loadHookConfig } = require('./lib/hook-config.cjs');
 
 // ── Load config ───────────────────────────────────────────────────────────
 let config;
 try {
-  config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+  config = loadHookConfig({ hooksDir: __dirname });
 } catch {
   process.stderr.write('[dep-guard] WARN: config.json not found or invalid — skipping dep guard\n');
   process.exit(0);

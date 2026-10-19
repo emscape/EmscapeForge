@@ -1,36 +1,14 @@
 {
-  "_readme": "Customize this file for your project. See .claude/hooks/README.md for full documentation.",
-
-  "project_name": "EmscapeForge",
+  "_readme": "Shared defaults. Per-project overrides go in <project>/.claude/hooks.config.json (see README.md, Project-local overrides).",
 
   "session_start": {
-    "custom_notes": [
-      "Windows 11 + Git Bash. All website commands run from the website/ subdirectory.",
-      "Never commit directly to master for feature work; every change gets its own branch + PR.",
-      "Deploy is GitHub Pages via .github/workflows/deploy.yml, triggered by a push to master."
-    ]
+    "custom_notes": []
   },
 
   "arch_rules": {
     "enabled": false,
     "_comment": "Block file writes that violate package boundary rules. Set enabled=true and define rules.",
-    "rules": [
-      {
-        "_comment": "Remove this example and add your own rules",
-        "package_path": "packages/core",
-        "forbidden_imports": [
-          "apps/ui",
-          "apps/server"
-        ],
-        "forbidden_frameworks": [
-          "react",
-          "vue",
-          "angular"
-        ],
-        "forbidden_content_pattern": null,
-        "_content_pattern_note": "Optional regex. If set, matching string literals in the file trigger a violation. Example: '(case|doc|puzzle)_[a-z0-9_]+'"
-      }
-    ]
+    "rules": []
   },
 
   "content_watch": {
@@ -53,7 +31,7 @@
 
   "env_guard": {
     "enabled": true,
-    "_comment": "Block (exit 2) Read calls targeting .env or .env.* files. Environment files contain secrets and must not be read by the assistant."
+    "_comment": "Block (exit 2) Read calls targeting .env or .env.* files. Environment files contain secrets and must not be read by the assistant. NOTE: check-env-guard.js does not read this config; the block is unconditional and `enabled` currently has no effect."
   },
 
   "push_audit": {

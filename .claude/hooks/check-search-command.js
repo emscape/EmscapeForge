@@ -22,7 +22,7 @@
  *                               search_guard.allow_patterns[]
  */
 
-const { readFileSync } = require('fs');
+const { loadHookConfig } = require('./lib/hook-config.cjs');
 const { resolve } = require('path');
 
 const CONFIG_PATH = resolve(__dirname, 'config.json');
@@ -34,7 +34,7 @@ function log(msg) {
 // ── Load config ───────────────────────────────────────────────────────────
 let config;
 try {
-  config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+  config = loadHookConfig({ hooksDir: __dirname });
 } catch {
   log(`WARN: config.json not found at ${CONFIG_PATH} — skipping search guard`);
   process.exit(0);
