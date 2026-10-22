@@ -11,6 +11,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { extractDeletedBranches } = require('./check-branch-delete-guard.js');
 
 function branches(cmd) {
@@ -152,5 +154,39 @@ test('extractDeletedBranches', async (t) => {
 
   await t.test('a chain operator inside a quoted commit message does not create a fake delete', () => {
     assert.deepEqual(branches('git commit -m "x && git push origin --delete branch28"'), []);
+  });
+});
+
+// Runs the hook as Claude Code does (stdin JSON) with gh off PATH. A delete
+// that reaches the PR check warns that gh is unavailable; one dropped
+// earlier exits silently. Catches a raw-text prefilter in the lifecycle
+// that the extractor-only tests above can't see.
+function runHookWithoutGh(command) {
+  const r = spawnSync(process.execPath, [path.join(__dirname, 'check-branch-delete-guard.js')], {
+    input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }),
+    env: { ...process.env, PATH: path.dirname(process.execPath) },
+    encoding: 'utf8',
+    timeout: 30000,
+  });
+  return { status: r.status, stderr: r.stderr || '' };
+}
+
+test('hook lifecycle', async (t) => {
+  await t.test('a delete behind git -C with a quoted path reaches the PR check', () => {
+    const r = runHookWithoutGh('git -C "work tree" push origin --delete topic');
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /gh CLI not available/);
+  });
+
+  await t.test('a delete through a quoted Windows git.exe path reaches the PR check', () => {
+    const r = runHookWithoutGh('"C:\\Program Files\\Git\\bin\\git.exe" push origin --delete topic');
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /gh CLI not available/);
+  });
+
+  await t.test('a non-delete push exits without reaching the PR check', () => {
+    const r = runHookWithoutGh('git push origin topic');
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '');
   });
 });

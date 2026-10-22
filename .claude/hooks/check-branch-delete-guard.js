@@ -172,10 +172,8 @@ function runHook() {
     }
 
     const cmd = (input?.tool_input?.command || '').trim();
-    if (!/\bgit\s+push\b/.test(cmd)) process.exit(0); // not a push — allow
-
     const branches = extractDeletedBranches(cmd);
-    if (branches.length === 0) process.exit(0); // push, but not a delete — allow
+    if (branches.length === 0) process.exit(0); // not a delete push — allow
 
     const ghAuth = tryRun('gh auth status');
     if (!ghAuth.ok) {

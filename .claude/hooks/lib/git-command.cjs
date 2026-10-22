@@ -156,13 +156,31 @@ function stripLeadingWrapperPrefix(segment) {
   return s;
 }
 
-// Env prefixes and sudo/command/exec wrappers, in any mix and order.
+// Shell control-flow words that put the next word in command position:
+// once `if true; then git push; fi` is split on `;`, the push segment
+// starts with `then`. Same for `do`/`else`/`elif`/`if`/`while`/`until`,
+// `!`, a `{` group, and a `(` subshell (whose closing `)` is dropped too,
+// so `(git push origin main)` doesn't leave `main)` as the branch).
+const CONTROL_FLOW_WORD = /^(?:if|then|else|elif|do|while|until|!|\{)\s+/;
+const SUBSHELL_OPEN = /^\(\s*/;
+
+function stripLeadingControlFlow(segment) {
+  const s = segment.replace(CONTROL_FLOW_WORD, '');
+  if (s !== segment) return s;
+  if (SUBSHELL_OPEN.test(segment)) {
+    return segment.replace(SUBSHELL_OPEN, '').replace(/\s*\)$/, '');
+  }
+  return segment;
+}
+
+// Env prefixes, sudo/command/exec wrappers, and control-flow words, in any
+// mix and order.
 function stripPrefixes(segment) {
   let s = segment;
   let prev;
   do {
     prev = s;
-    s = stripLeadingWrapperPrefix(stripLeadingEnvPrefix(s));
+    s = stripLeadingWrapperPrefix(stripLeadingEnvPrefix(stripLeadingControlFlow(s)));
   } while (s !== prev);
   return s;
 }

@@ -76,6 +76,13 @@ test('commandSegments', async (t) => {
     assert.deepEqual(normalized('bash -c "git status && /usr/bin/git push origin x"'), ['git status', 'git push origin x']);
   });
 
+  await t.test('strips control-flow words, a { group, and a ( subshell before the command', () => {
+    assert.deepEqual(normalized('if true; then gh pr merge 7; fi'), ['true', 'gh pr merge 7', 'fi']);
+    assert.deepEqual(normalized('{ gh pr merge 7; }'), ['gh pr merge 7', '}']);
+    assert.deepEqual(normalized('(git push origin main)'), ['git push origin main']);
+    assert.deepEqual(normalized('then sudo GIT_TRACE=1 git push origin x'), ['git push origin x']);
+  });
+
   await t.test('leaves unrelated commands unchanged', () => {
     assert.deepEqual(normalized('npm test'), ['npm test']);
   });
@@ -102,6 +109,17 @@ test('isGitPush', async (t) => {
     assert.equal(isGitPush('sudo git push'), true);
     assert.equal(isGitPush('env bash -c "git push origin feature"'), true);
     assert.equal(isGitPush('npm test && git push'), true);
+  });
+
+  await t.test('git push in a shell control-flow command position', () => {
+    assert.equal(isGitPush('if true; then git push origin feature; fi'), true);
+    assert.equal(isGitPush('{ git push origin feature; }'), true);
+    assert.equal(isGitPush('if git push origin feature; then echo ok; fi'), true);
+    assert.equal(isGitPush('for r in a b; do git push "$r" feature; done'), true);
+    assert.equal(isGitPush('while false; do :; done; until git push; do sleep 1; done'), true);
+    assert.equal(isGitPush('if false; then :; else git push; fi'), true);
+    assert.equal(isGitPush('! git push origin feature'), true);
+    assert.equal(isGitPush('(git push origin feature)'), true);
   });
 
   await t.test('git push only mentioned inside a quoted argument is not a push', () => {
