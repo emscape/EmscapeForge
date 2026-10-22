@@ -341,6 +341,12 @@ test('findMergeReason', async (t) => {
     assert.equal(blocked('GH_TOKEN=abc123 gh pr view 27'), false);
   });
 
+  await t.test('a bare fully-qualified refs/heads/main push is flagged', () => {
+    assert.equal(blocked('git push origin refs/heads/main', onFeatureBranch), true);
+    assert.equal(blocked('git push origin "refs/heads/master"', onFeatureBranch), true);
+    assert.equal(blocked('git push origin refs/heads/feature', onFeatureBranch), false);
+  });
+
   await t.test('a refspec pushing an unrelated branch to itself is not flagged', () => {
     assert.equal(blocked('git push origin feature:feature'), false);
   });
@@ -399,5 +405,20 @@ test('findMergeReason', async (t) => {
 
   await t.test('nested wrappers with prefixes at each level', () => {
     assert.equal(blocked('env bash -c "sudo sh -c \\"gh pr merge 27\\""'), true);
+  });
+
+  await t.test('gh pr merge or a push to main inside a command substitution', () => {
+    assert.equal(blocked('$(gh pr merge 27)'), true);
+    assert.equal(blocked('`gh pr merge 27`'), true);
+    assert.equal(blocked('echo "merged: $(gh pr merge 27)"'), true);
+    assert.equal(blocked('echo $(git push origin main)', onFeatureBranch), true);
+  });
+
+  await t.test('a substitution that is only quoted text is not flagged', () => {
+    assert.equal(blocked("echo '$(gh pr merge 27)'"), false);
+  });
+
+  await t.test('a push to main inside a subshell after a cd', () => {
+    assert.equal(blocked('(cd repo && git push origin main)', onFeatureBranch), true);
   });
 });

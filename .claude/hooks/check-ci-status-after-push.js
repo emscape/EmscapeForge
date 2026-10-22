@@ -24,7 +24,7 @@
 
 const { execFileSync } = require('child_process');
 const { loadHookConfig } = require('./lib/hook-config.cjs');
-const { isGitPush, pushTargetDir } = require('./lib/git-command.cjs');
+const { firstPushSegment, isGitPush, pushTargetDir, stripSurroundingQuotes } = require('./lib/git-command.cjs');
 
 function readConfig() {
   try {
@@ -69,7 +69,38 @@ function shouldVerify(cmd) {
   return isGitPush(cmd);
 }
 
-module.exports = { shouldVerify };
+// `git push` options whose value is the next word, so it isn't mistaken
+// for the remote or a refspec.
+const PUSH_ARG_FLAGS = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec']);
+
+// What a normalized `git push` segment pushes, from its first refspec:
+// `{ src, dest }` (refs/heads/ stripped; a `dest` of `HEAD` means the
+// current branch), null when no refspec is given (git pushes the current
+// branch), or `{ skip }` when no branch commit is pushed (a delete, or a
+// tag or other non-branch destination). `git push origin feature` from
+// another branch, or `feature:main`, pushes something other than HEAD, so
+// HEAD and the current branch aren't the commit and branch to wait for.
+function pushedRef(segment) {
+  const args = segment.split(/\s+/).slice(2).map(stripSurroundingQuotes);
+  const positional = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--delete' || arg === '-d') return { skip: 'the push deletes a remote branch' };
+    if (PUSH_ARG_FLAGS.has(arg)) i++;
+    else if (!arg.startsWith('-')) positional.push(arg);
+  }
+  if (positional.length < 2) return null; // [0] is the remote
+
+  const refspec = positional[1].replace(/^\+/, '');
+  const colon = refspec.indexOf(':');
+  const src = colon === -1 ? refspec : refspec.slice(0, colon);
+  const dest = colon === -1 ? refspec : refspec.slice(colon + 1) || src;
+  if (!src) return { skip: 'the push deletes a remote branch' };
+  if (/^refs\/(?!heads\/)/.test(dest)) return { skip: `the push updates ${dest}, not a branch` };
+  return { src, dest: dest.replace(/^refs\/heads\//, '') };
+}
+
+module.exports = { shouldVerify, pushedRef };
 
 // Only run the stdin-driven hook lifecycle when executed directly (how
 // Claude Code invokes it) — not when require()'d from the test file.
@@ -107,15 +138,29 @@ function runHook() {
       process.exit(0);
     }
 
+    // The commit and remote branch named by the push's refspec, falling
+    // back to HEAD and the current branch when none is given.
+    const ref = pushedRef(firstPushSegment(cmd).normalized);
+    if (ref?.skip) {
+      console.error(`[ci-status-check] Skipping CI verification: ${ref.skip}.`);
+      process.exit(0);
+    }
+
     const ghCheck = tryRun('gh', ['auth', 'status'], repoDir);
     if (!ghCheck.ok) {
       console.error('[ci-status-check] gh CLI not available/authenticated — skipping CI verification. Check manually with `gh run list`.');
       process.exit(0);
     }
 
-    const branch = run('git', ['branch', '--show-current'], repoDir).trim();
-    const sha = run('git', ['rev-parse', 'HEAD'], repoDir).trim();
+    const src = ref?.src || 'HEAD';
+    const branch = ref && ref.dest !== 'HEAD'
+      ? ref.dest
+      : run('git', ['branch', '--show-current'], repoDir).trim();
+    const sha = run('git', ['rev-parse', '--verify', '--quiet', `${src}^{commit}`], repoDir).trim();
     if (!branch || !sha) {
+      if (ref) {
+        console.error(`[ci-status-check] Could not resolve the pushed ref "${src}" to a commit — skipping CI verification. Check manually with \`gh run list\` in that repo.`);
+      }
       process.exit(0); // not in a git repo, or detached HEAD — nothing to verify
     }
 

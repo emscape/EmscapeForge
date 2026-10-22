@@ -28,37 +28,94 @@ const path = require('node:path');
 const WORD = `(?:[^\\s"']|"[^"]*"|'[^']*')+`;
 const OPTIONAL_WORD = `(?:${WORD})?`;
 
+// Index just past the closing `"` of a double-quoted string opening at
+// `i`, or the end of `str` if unterminated. A backslash escapes the next
+// character (so `\"` doesn't end the quote), and a `$(...)` or backtick
+// substitution inside is skipped whole — its own quotes don't close this
+// one.
+function doubleQuoteEnd(str, i) {
+  for (let j = i + 1; j < str.length; j++) {
+    const ch = str[j];
+    if (ch === '\\') {
+      j++;
+    } else if (ch === '"') {
+      return j + 1;
+    } else if (ch === '`' || (ch === '$' && str[j + 1] === '(')) {
+      j = substitutionEnd(str, j) - 1;
+    }
+  }
+  return str.length;
+}
+
+// Index just past the end of a `$(...)` or backtick command substitution
+// opening at `i`, or the end of `str` if unterminated. Parentheses nest,
+// and quotes and inner substitutions are skipped whole, so the `)` in
+// `$(echo ")")` or `$(cd $(pwd) && x)` doesn't end the outer one.
+function substitutionEnd(str, i) {
+  if (str[i] === '`') {
+    for (let j = i + 1; j < str.length; j++) {
+      if (str[j] === '\\') j++;
+      else if (str[j] === '`') return j + 1;
+    }
+    return str.length;
+  }
+  let depth = 0;
+  for (let j = i + 1; j < str.length; j++) {
+    const ch = str[j];
+    if (ch === '\\') {
+      j++;
+    } else if (ch === "'") {
+      const close = str.indexOf("'", j + 1);
+      if (close === -1) return str.length;
+      j = close;
+    } else if (ch === '"') {
+      j = doubleQuoteEnd(str, j) - 1;
+    } else if (ch === '`' || (ch === '$' && str[j + 1] === '(')) {
+      j = substitutionEnd(str, j) - 1;
+    } else if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+      if (depth === 0) return j + 1;
+    }
+  }
+  return str.length;
+}
+
+// Index just past a quoted string, an escaped character, or a command
+// substitution opening at `i` — text that goes into a segment whole and is
+// never split — or -1 if `i` opens none of those. Single quotes are fully
+// literal.
+function unsplittableEnd(str, i) {
+  const ch = str[i];
+  if (ch === '\\') return Math.min(i + 2, str.length);
+  if (ch === "'") {
+    const close = str.indexOf("'", i + 1);
+    return close === -1 ? str.length : close + 1;
+  }
+  if (ch === '"') return doubleQuoteEnd(str, i);
+  if (ch === '`' || (ch === '$' && str[i + 1] === '(')) return substitutionEnd(str, i);
+  return -1;
+}
+
 // Splits on shell chain operators (`&&`, `||`, `;`, `&`, `|`, newline) —
-// only those outside any quoted string, so a commit message that merely
-// *mentions* `git push origin main && ...` is not split into a fake push.
-// Inside double quotes a backslash escapes the next character (so `\"`
-// doesn't end the quote); single quotes are fully literal.
+// only those outside any quoted string or command substitution, so a
+// commit message that merely *mentions* `git push origin main && ...` is
+// not split into a fake push. A `(` subshell's parentheses are boundaries
+// too: `(cd repo && git push origin main)` must not leave `main)` as the
+// branch. A `$(...)`/backtick substitution stays inside its segment;
+// substitutionsOf() pulls its body out separately.
 function segmentsOf(fullCmd) {
   const segments = [];
   let current = '';
-  let quote = null; // null | '"' | "'"
 
   for (let i = 0; i < fullCmd.length; i++) {
     const ch = fullCmd[i];
 
-    if (quote === '"') {
-      if (ch === '\\' && i + 1 < fullCmd.length) {
-        current += ch + fullCmd[i + 1];
-        i++;
-        continue;
-      }
-      current += ch;
-      if (ch === '"') quote = null;
-      continue;
-    }
-    if (quote === "'") {
-      current += ch;
-      if (ch === "'") quote = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      current += ch;
+    const end = unsplittableEnd(fullCmd, i);
+    if (end !== -1) {
+      current += fullCmd.slice(i, end);
+      i = end - 1;
       continue;
     }
     if ((ch === '&' && fullCmd[i + 1] === '&') || (ch === '|' && fullCmd[i + 1] === '|')) {
@@ -67,7 +124,7 @@ function segmentsOf(fullCmd) {
       i++;
       continue;
     }
-    if (ch === ';' || ch === '&' || ch === '|' || ch === '\n') {
+    if (ch === ';' || ch === '&' || ch === '|' || ch === '\n' || ch === '(' || ch === ')') {
       segments.push(current);
       current = '';
       continue;
@@ -77,6 +134,32 @@ function segmentsOf(fullCmd) {
   segments.push(current);
 
   return segments.map((s) => s.trim()).filter(Boolean);
+}
+
+// The command strings inside a segment's `$(...)` and backtick
+// substitutions — outside quotes or inside double quotes, where the shell
+// runs them, but not inside single quotes, where it doesn't. Outermost
+// level only: nested ones are found when each body is parsed in turn.
+function substitutionsOf(segment) {
+  const bodies = [];
+  let inDouble = false;
+  for (let i = 0; i < segment.length; i++) {
+    const ch = segment[i];
+    if (ch === '\\') {
+      i++;
+    } else if (ch === "'" && !inDouble) {
+      const close = segment.indexOf("'", i + 1);
+      if (close === -1) break;
+      i = close;
+    } else if (ch === '"') {
+      inDouble = !inDouble;
+    } else if (ch === '`' || (ch === '$' && segment[i + 1] === '(')) {
+      const end = substitutionEnd(segment, i);
+      bodies.push(segment.slice(ch === '`' ? i + 1 : i + 2, end - 1));
+      i = end - 1;
+    }
+  }
+  return bodies;
 }
 
 // Index of the closing quote for a quoted argument whose content starts at
@@ -163,18 +246,11 @@ function stripLeadingWrapperPrefix(segment) {
 // Shell control-flow words that put the next word in command position:
 // once `if true; then git push; fi` is split on `;`, the push segment
 // starts with `then`. Same for `do`/`else`/`elif`/`if`/`while`/`until`,
-// `!`, a `{` group, and a `(` subshell (whose closing `)` is dropped too,
-// so `(git push origin main)` doesn't leave `main)` as the branch).
+// `!`, and a `{` group. (segmentsOf() already splits off a `(` subshell.)
 const CONTROL_FLOW_WORD = /^(?:if|then|else|elif|do|while|until|!|\{)\s+/;
-const SUBSHELL_OPEN = /^\(\s*/;
 
 function stripLeadingControlFlow(segment) {
-  const s = segment.replace(CONTROL_FLOW_WORD, '');
-  if (s !== segment) return s;
-  if (SUBSHELL_OPEN.test(segment)) {
-    return segment.replace(SUBSHELL_OPEN, '').replace(/\s*\)$/, '');
-  }
-  return segment;
+  return segment.replace(CONTROL_FLOW_WORD, '');
 }
 
 // Env prefixes, sudo/command/exec wrappers, and control-flow words, in any
@@ -297,7 +373,10 @@ function gitDir(segment, base) {
 }
 
 // Every command a raw Bash command string would run, flattened: split on
-// chain operators, with shell -c wrappers unwrapped recursively. Prefixes
+// chain operators, with shell -c wrappers unwrapped and `$(...)`/backtick
+// substitutions parsed recursively (`echo $(gh pr merge 27)` runs the
+// merge). A substitution's commands come just before the segment holding
+// it, since they run first, in the directory that segment starts in. Prefixes
 // are stripped *before* testing for a wrapper — otherwise `env bash -c
 // "gh pr merge 27"` is never seen as a wrapper (it starts with `env`) and
 // stripping `env` afterward leaves an un-expanded `bash -c ...`.
@@ -316,6 +395,9 @@ function commandSegments(fullCmd, startDir = process.cwd()) {
       out.push(...commandSegments(inner, dir));
       continue;
     }
+    for (const body of substitutionsOf(raw)) {
+      out.push(...commandSegments(body, dir));
+    }
     const normalized = normalizeSegment(raw);
     if (/^(?:cd|pushd|popd)(?:\s|$)/.test(normalized)) {
       // A form this can't follow (`cd $(...)`, `popd`) makes the directory
@@ -328,10 +410,16 @@ function commandSegments(fullCmd, startDir = process.cwd()) {
   return out;
 }
 
+// The first `git push` in the command, as a commandSegments() entry, or
+// undefined if there is none.
+function firstPushSegment(fullCmd, startDir = process.cwd()) {
+  return commandSegments(fullCmd, startDir).find((s) => /^git\s+push(?:\s|$)/.test(s.normalized));
+}
+
 // The directory the first `git push` in the command runs in, if it can be
 // determined and exists; otherwise null.
 function pushTargetDir(fullCmd, startDir = process.cwd()) {
-  const push = commandSegments(fullCmd, startDir).find((s) => /^git\s+push(?:\s|$)/.test(s.normalized));
+  const push = firstPushSegment(fullCmd, startDir);
   if (!push || push.cwd === null) return null;
   return fs.existsSync(push.cwd) ? push.cwd : null;
 }
@@ -356,6 +444,7 @@ function stripSurroundingQuotes(token) {
 
 module.exports = {
   commandSegments,
+  firstPushSegment,
   isGitPush,
   normalizeSegment,
   pushTargetDir,

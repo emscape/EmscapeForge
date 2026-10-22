@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { shouldVerify } = require('./check-ci-status-after-push.js');
+const { shouldVerify, pushedRef } = require('./check-ci-status-after-push.js');
 
 test('shouldVerify', async (t) => {
   await t.test('plain git push', () => {
@@ -38,6 +38,38 @@ test('shouldVerify', async (t) => {
 
   await t.test('a command whose text merely contains "push"', () => {
     assert.equal(shouldVerify('cat check-git-push-audit.js'), false);
+  });
+});
+
+test('pushedRef', async (t) => {
+  await t.test('no refspec means the current branch and HEAD', () => {
+    assert.equal(pushedRef('git push'), null);
+    assert.equal(pushedRef('git push -u origin'), null);
+  });
+
+  await t.test('a bare branch pushes that local branch to the same name', () => {
+    assert.deepEqual(pushedRef('git push origin feature'), { src: 'feature', dest: 'feature' });
+    assert.deepEqual(pushedRef('git push -u origin "feature"'), { src: 'feature', dest: 'feature' });
+  });
+
+  await t.test('a src:dest refspec waits for runs on the destination branch', () => {
+    assert.deepEqual(pushedRef('git push origin feature:release'), { src: 'feature', dest: 'release' });
+    assert.deepEqual(pushedRef('git push origin +HEAD:refs/heads/release'), { src: 'HEAD', dest: 'release' });
+    assert.deepEqual(pushedRef('git push origin feature:'), { src: 'feature', dest: 'feature' });
+  });
+
+  await t.test('HEAD as the refspec keeps the current branch as the destination', () => {
+    assert.deepEqual(pushedRef('git push origin HEAD'), { src: 'HEAD', dest: 'HEAD' });
+  });
+
+  await t.test('option values are not taken as the remote or refspec', () => {
+    assert.deepEqual(pushedRef('git push -o ci.skip origin feature'), { src: 'feature', dest: 'feature' });
+  });
+
+  await t.test('deletes and non-branch destinations are skipped', () => {
+    assert.ok(pushedRef('git push origin --delete feature').skip);
+    assert.ok(pushedRef('git push origin :feature').skip);
+    assert.ok(pushedRef('git push origin v1.0:refs/tags/v1.0').skip);
   });
 });
 
@@ -70,5 +102,11 @@ test('hook lifecycle', async (t) => {
     const r = runHook('cd "$REPO" && git push');
     assert.equal(r.status, 0);
     assert.match(r.stderr, /Could not determine which repository/);
+  });
+
+  await t.test('a delete push is skipped before any CI lookup', () => {
+    const r = runHook(`git -C "${__dirname}" push origin --delete some-branch`);
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /Skipping CI verification: the push deletes a remote branch/);
   });
 });

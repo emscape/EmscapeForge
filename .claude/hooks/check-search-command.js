@@ -23,7 +23,7 @@
  */
 
 const { loadHookConfig } = require('./lib/hook-config.cjs');
-const { segmentsOf } = require('./lib/git-command.cjs');
+const { commandSegments, stripSurroundingQuotes } = require('./lib/git-command.cjs');
 const { resolve } = require('path');
 
 const CONFIG_PATH = resolve(__dirname, 'config.json');
@@ -46,22 +46,20 @@ function log(msg) {
 }
 
 // The watched commands (lowercased basenames) that a Bash command runs.
-// Splits on &&, ||, ;, |, & and newlines outside quotes only — the shared
-// splitter in lib/git-command.cjs — so `printf '%s\n' 'a | cat b'` isn't
-// read as a fake `cat` segment. Then looks at the leading word of each
-// segment, skipping simple VAR=val prefixes.
+// Uses the shared parser in lib/git-command.cjs, so operators inside quotes
+// don't create fake segments (`printf '%s\n' 'a | cat b'` has no `cat`),
+// and env/sudo/command/exec prefixes, `bash -c '...'` wrappers, and
+// `$(...)` substitutions are seen through the same way the git guards see
+// through them. Then looks at the leading word of each segment.
 function rawSearchCommands(command, commands = DEFAULT_COMMANDS) {
   const commandSet = new Set(commands.map(c => c.toLowerCase()));
   const hits = [];
 
-  for (const segment of segmentsOf(command)) {
-    const tokens = segment.split(/\s+/);
-    let i = 0;
-    while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i++;
-    const head = tokens[i];
+  for (const { normalized } of commandSegments(command)) {
+    const head = stripSurroundingQuotes(normalized.split(/\s+/)[0]);
     if (!head) continue;
 
-    const basename = head.split(/[\\/]/).pop().toLowerCase();
+    const basename = head.split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, '');
     if (commandSet.has(basename)) {
       hits.push(basename);
     }

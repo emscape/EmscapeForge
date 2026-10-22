@@ -31,6 +31,19 @@ test('rawSearchCommands', async (t) => {
     assert.deepEqual(rawSearchCommands('git commit -m "fix; then grep the logs && tail them"'), []);
   });
 
+  await t.test('a watched command behind sudo/env/command or inside a shell wrapper is detected', () => {
+    assert.deepEqual(rawSearchCommands('sudo cat f'), ['cat']);
+    assert.deepEqual(rawSearchCommands('env grep p f'), ['grep']);
+    assert.deepEqual(rawSearchCommands('command -p head f'), ['head']);
+    assert.deepEqual(rawSearchCommands("bash -c 'cat f'"), ['cat']);
+  });
+
+  await t.test('a watched command in a subshell or command substitution is detected', () => {
+    assert.deepEqual(rawSearchCommands('(cat f)'), ['cat']);
+    assert.deepEqual(rawSearchCommands('echo "$(tail -1 f)"'), ['tail']);
+    assert.deepEqual(rawSearchCommands("echo '$(tail -1 f)'"), []);
+  });
+
   await t.test('unwatched commands are not reported', () => {
     assert.deepEqual(rawSearchCommands('npm run build'), []);
   });

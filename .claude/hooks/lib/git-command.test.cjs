@@ -91,6 +91,30 @@ test('commandSegments', async (t) => {
     assert.deepEqual(normalized('then sudo GIT_TRACE=1 git push origin x'), ['git push origin x']);
   });
 
+  await t.test('a ( subshell boundary is split off, including inside a chain', () => {
+    assert.deepEqual(normalized('(cd repo && git push origin main)'), ['cd repo', 'git push origin main']);
+    assert.deepEqual(normalized('true && (git push origin main) || echo no'), ['true', 'git push origin main', 'echo no']);
+  });
+
+  await t.test('parses $(...) and backtick substitutions, before the segment holding them', () => {
+    assert.deepEqual(normalized('echo $(git push origin main)'), ['git push origin main', 'echo $(git push origin main)']);
+    assert.deepEqual(normalized('`gh pr merge 27`'), ['gh pr merge 27', '`gh pr merge 27`']);
+    assert.deepEqual(normalized('echo "x $(gh pr merge 27)"'), ['gh pr merge 27', 'echo "x $(gh pr merge 27)"']);
+  });
+
+  await t.test('chain operators and parentheses inside a substitution do not split the outer command', () => {
+    assert.deepEqual(normalized('echo $(git status && git push) done'), ['git status', 'git push', 'echo $(git status && git push) done']);
+    assert.deepEqual(normalized('echo $(echo ")" ; gh pr merge 3)'), ['echo ")"', 'gh pr merge 3', 'echo $(echo ")" ; gh pr merge 3)']);
+  });
+
+  await t.test('parses nested substitutions', () => {
+    assert.deepEqual(normalized('echo $(echo $(gh pr merge 3))'), ['gh pr merge 3', 'echo $(gh pr merge 3)', 'echo $(echo $(gh pr merge 3))']);
+  });
+
+  await t.test('a substitution inside single quotes is not run', () => {
+    assert.deepEqual(normalized("echo '$(gh pr merge 3)'"), ["echo '$(gh pr merge 3)'"]);
+  });
+
   await t.test('leaves unrelated commands unchanged', () => {
     assert.deepEqual(normalized('npm test'), ['npm test']);
   });
@@ -118,6 +142,11 @@ test('commandSegments cwd', async (t) => {
   await t.test('a quoted -C or cd path with spaces is one argument', () => {
     assert.deepEqual(dirs('git -C "work tree" push'), [path.join(BASE, 'work tree')]);
     assert.deepEqual(dirs("cd 'work tree' && git push").slice(-1), [path.join(BASE, 'work tree')]);
+  });
+
+  await t.test('a substitution runs in the directory its segment starts in', () => {
+    assert.deepEqual(dirs('cd sub && echo $(git push)'), [path.join(BASE, 'sub'), path.join(BASE, 'sub'), path.join(BASE, 'sub')]);
+    assert.deepEqual(dirs('cd $(echo x) && git push').slice(0, 1), [BASE]);
   });
 
   await t.test('a cd inside a shell wrapper does not carry out of it', () => {
@@ -187,6 +216,13 @@ test('isGitPush', async (t) => {
     assert.equal(isGitPush('if false; then :; else git push; fi'), true);
     assert.equal(isGitPush('! git push origin feature'), true);
     assert.equal(isGitPush('(git push origin feature)'), true);
+  });
+
+  await t.test('git push inside a command substitution', () => {
+    assert.equal(isGitPush('echo $(git push origin feature)'), true);
+    assert.equal(isGitPush('echo `git push origin feature`'), true);
+    assert.equal(isGitPush('x="$(git push)"'), true);
+    assert.equal(isGitPush("echo '$(git push)'"), false);
   });
 
   await t.test('git push only mentioned inside a quoted argument is not a push', () => {

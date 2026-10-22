@@ -155,9 +155,11 @@ function protectedRefspecPush(segment) {
     // remote/repository has also been given (`git push origin master`) —
     // a single lone token (`git push master`) is what git itself treats
     // as the repository argument, not a branch, so there's no push of
-    // anything named master/main to react to yet.
-    if (nonFlags.length >= 2 && PROTECTED_BRANCHES.includes(token)) {
-      return { src: token, dest: token };
+    // anything named master/main to react to yet. A fully-qualified
+    // `refs/heads/main` is the same branch.
+    const branch = token.replace(/^refs\/heads\//, '');
+    if (nonFlags.length >= 2 && PROTECTED_BRANCHES.includes(branch)) {
+      return { src: branch, dest: branch };
     }
   }
   return null;

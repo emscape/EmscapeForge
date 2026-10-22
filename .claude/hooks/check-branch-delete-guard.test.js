@@ -155,6 +155,15 @@ test('extractDeletedBranches', async (t) => {
   await t.test('a chain operator inside a quoted commit message does not create a fake delete', () => {
     assert.deepEqual(branches('git commit -m "x && git push origin --delete branch28"'), []);
   });
+
+  await t.test('a delete inside a command substitution is detected', () => {
+    assert.deepEqual(branches('echo $(git push origin --delete branch29)'), ['branch29']);
+    assert.deepEqual(branches('echo `git push origin :branch30`'), ['branch30']);
+  });
+
+  await t.test('a delete inside a subshell is detected without the closing paren', () => {
+    assert.deepEqual(branches('(cd repo && git push origin --delete branch31)'), ['branch31']);
+  });
 });
 
 // Runs the hook as Claude Code does (stdin JSON) with gh off PATH. A delete
