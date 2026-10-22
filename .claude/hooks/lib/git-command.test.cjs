@@ -6,7 +6,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { commandSegments, isGitPush } = require('./git-command.cjs');
+const os = require('node:os');
+const path = require('node:path');
+const { commandSegments, isGitPush, pushTargetDir } = require('./git-command.cjs');
+
+const BASE = path.resolve(os.tmpdir(), 'base');
+
+function dirs(cmd) {
+  return commandSegments(cmd, BASE).map((s) => s.cwd);
+}
 
 function normalized(cmd) {
   return commandSegments(cmd).map((s) => s.normalized);
@@ -85,6 +93,65 @@ test('commandSegments', async (t) => {
 
   await t.test('leaves unrelated commands unchanged', () => {
     assert.deepEqual(normalized('npm test'), ['npm test']);
+  });
+});
+
+test('commandSegments cwd', async (t) => {
+  await t.test('defaults to the starting directory', () => {
+    assert.deepEqual(dirs('git push'), [BASE]);
+  });
+
+  await t.test('a cd carries into later segments, relative to the current one', () => {
+    assert.deepEqual(dirs('cd sub && git push'), [path.join(BASE, 'sub'), path.join(BASE, 'sub')]);
+    assert.deepEqual(dirs('cd a; cd ../b; git push').slice(-1), [path.join(BASE, 'b')]);
+  });
+
+  await t.test('pushd behaves like cd', () => {
+    assert.deepEqual(dirs('pushd sub && git push').slice(-1), [path.join(BASE, 'sub')]);
+  });
+
+  await t.test('git -C applies on top of the current directory, cumulatively', () => {
+    assert.deepEqual(dirs('cd sub && git -C ../other push').slice(-1), [path.join(BASE, 'other')]);
+    assert.deepEqual(dirs('git -C a -C b push'), [path.join(BASE, 'a', 'b')]);
+  });
+
+  await t.test('a quoted -C or cd path with spaces is one argument', () => {
+    assert.deepEqual(dirs('git -C "work tree" push'), [path.join(BASE, 'work tree')]);
+    assert.deepEqual(dirs("cd 'work tree' && git push").slice(-1), [path.join(BASE, 'work tree')]);
+  });
+
+  await t.test('a cd inside a shell wrapper does not carry out of it', () => {
+    assert.deepEqual(dirs('bash -c "cd a && git push" && git push'), [path.join(BASE, 'a'), path.join(BASE, 'a'), BASE]);
+  });
+
+  await t.test('a target that cannot be known statically is null', () => {
+    assert.deepEqual(dirs('cd "$REPO" && git push').slice(-1), [null]);
+    assert.deepEqual(dirs('cd a; cd -; git push').slice(-1), [null]);
+    assert.deepEqual(dirs('cd $(git rev-parse --show-toplevel) && git push').slice(-1), [null]);
+  });
+
+  await t.test('cd with no argument or ~ goes home', () => {
+    assert.deepEqual(dirs('cd && git push').slice(-1), [os.homedir()]);
+    assert.deepEqual(dirs('cd ~/x && git push').slice(-1), [path.join(os.homedir(), 'x')]);
+  });
+
+  if (process.platform === 'win32') {
+    await t.test('a Git Bash drive path resolves to the Windows drive', () => {
+      assert.deepEqual(dirs('cd /c/repos/x && git push').slice(-1), ['C:\\repos\\x']);
+    });
+  }
+});
+
+test('pushTargetDir', async (t) => {
+  await t.test('the directory of the push segment when it exists', () => {
+    assert.equal(pushTargetDir(`cd "${__dirname}" && git push`, BASE), __dirname);
+    assert.equal(pushTargetDir(`git -C "${__dirname}" push`, BASE), __dirname);
+  });
+
+  await t.test('null for a missing directory, an unknown one, or no push', () => {
+    assert.equal(pushTargetDir('cd does-not-exist && git push', BASE), null);
+    assert.equal(pushTargetDir('cd "$REPO" && git push', BASE), null);
+    assert.equal(pushTargetDir(`cd "${__dirname}" && git status`, BASE), null);
   });
 });
 

@@ -22,9 +22,9 @@
 
 'use strict';
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { loadHookConfig } = require('./lib/hook-config.cjs');
-const { isGitPush } = require('./lib/git-command.cjs');
+const { isGitPush, pushTargetDir } = require('./lib/git-command.cjs');
 
 function readConfig() {
   try {
@@ -34,17 +34,20 @@ function readConfig() {
   }
 }
 
-function run(cmd) {
+// Arguments go to the program as an argv array, never through a shell: a
+// branch name may legally contain `;` or `$(...)`, and interpolating it
+// into a command string would run it.
+function run(file, args, cwd) {
   try {
-    return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    return execFileSync(file, args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd });
   } catch (e) {
     return e.stdout || '';
   }
 }
 
-function tryRun(cmd) {
+function tryRun(file, args, cwd) {
   try {
-    return { ok: true, out: execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }) };
+    return { ok: true, out: execFileSync(file, args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd }) };
   } catch (e) {
     return { ok: false, out: e.stdout || '', err: e.stderr || String(e) };
   }
@@ -96,14 +99,22 @@ function runHook() {
       process.exit(0);
     }
 
-    const ghCheck = tryRun('gh auth status');
+    // The branch, SHA, and runs all come from the repo that was pushed, not
+    // this hook's own working directory.
+    const repoDir = pushTargetDir(cmd);
+    if (!repoDir) {
+      console.error('[ci-status-check] Could not determine which repository this push targeted (e.g. `cd "$VAR"`) — skipping CI verification. Check manually with `gh run list` in that repo.');
+      process.exit(0);
+    }
+
+    const ghCheck = tryRun('gh', ['auth', 'status'], repoDir);
     if (!ghCheck.ok) {
       console.error('[ci-status-check] gh CLI not available/authenticated — skipping CI verification. Check manually with `gh run list`.');
       process.exit(0);
     }
 
-    const branch = run('git branch --show-current').trim();
-    const sha = run('git rev-parse HEAD').trim();
+    const branch = run('git', ['branch', '--show-current'], repoDir).trim();
+    const sha = run('git', ['rev-parse', 'HEAD'], repoDir).trim();
     if (!branch || !sha) {
       process.exit(0); // not in a git repo, or detached HEAD — nothing to verify
     }
@@ -120,7 +131,9 @@ function runHook() {
     const phase1Deadline = Date.now() + newRunTimeoutMs;
     while (Date.now() < phase1Deadline && !matchedRun) {
       const listResult = tryRun(
-        `gh run list --branch ${branch} --limit 5 --json databaseId,status,conclusion,headSha`
+        'gh',
+        ['run', 'list', '--branch', branch, '--limit', '5', '--json', 'databaseId,status,conclusion,headSha'],
+        repoDir
       );
       if (listResult.ok) {
         try {
@@ -150,7 +163,7 @@ function runHook() {
     // will always return eventually. completion_timeout_seconds (config.json)
     // is currently unused anywhere in this file as a result — documented
     // there for a future implementer, not silently deleted.
-    const watchResult = tryRun(`gh run watch ${matchedRun.databaseId} --exit-status`);
+    const watchResult = tryRun('gh', ['run', 'watch', String(matchedRun.databaseId), '--exit-status'], repoDir);
 
     if (watchResult.ok) {
       console.error(`[ci-status-check] ✅ CI PASSED for ${sha.slice(0, 7)} (run ${matchedRun.databaseId}).`);

@@ -10,7 +10,9 @@
 //   • Source file changes with no corresponding test changes
 //
 // Algorithm:
-//   1. Get staged diff (git diff --staged). If empty, fall back to HEAD~1.
+//   1. In the repo the push targets (after any `cd`/`git -C`), get the staged
+//      diff (git diff --staged). If empty, fall back to every unpushed commit
+//      (@{u}..HEAD), then to HEAD~1 when there's no upstream.
 //   2. If still empty → block (nothing to push).
 //   3. Run all checks against added lines only (lines starting with '+').
 //   4. Report findings in the format: File:line | Severity | Issue | Suggested fix
@@ -23,15 +25,15 @@
 'use strict';
 
 const { execSync } = require('child_process');
-const { isGitPush } = require('./lib/git-command.cjs');
+const { isGitPush, pushTargetDir } = require('./lib/git-command.cjs');
 
 // ── Secret patterns ────────────────────────────────────────────────────────────
 // Generic (non-vendor-specific) patterns keep a low length floor (8 chars
 // for credentials, 4 for passwords): real secrets shorter than 20 chars
 // exist, and a higher floor silently lets them through. Short, human-
 // readable test fixtures (an `apiKey` set to 'test-api-key') are handled with a
-// trailing `// nosecret` comment on that line (see Check 1) rather than by
-// weakening the patterns. The vendor-specific patterns below (Google/
+// trailing `// nosecret` comment on that line, honored in test and docs files
+// only (see SUPPRESS_MARKER), rather than by weakening the patterns. The vendor-specific patterns below (Google/
 // OpenAI/GitHub/Slack/AWS) match exact real-world formats.
 const SECRET_PATTERNS = [
   {
@@ -65,9 +67,9 @@ const DEBUG_PATTERNS = [
 const CODE_COMMENT_RE = /^\s*(?:\/\/|#)\s*(?:const |let |var |function |def |class |import |return |if \(|for \(|while \()/;
 
 // ── Shell helper ───────────────────────────────────────────────────────────────
-function run(cmd) {
+function run(cmd, cwd) {
   try {
-    return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd });
   } catch (e) {
     return e.stdout || '';
   }
@@ -77,9 +79,9 @@ function run(cmd) {
 // missing ref (e.g. HEAD~1 on a root commit) writes the ref name itself to
 // stdout as part of its usage hint, which would make a truthy-stdout check
 // misread failure as success. Exit code is the only reliable signal.
-function refExists(ref) {
+function refExists(ref, cwd) {
   try {
-    execSync(`git rev-parse --verify ${ref}`, { stdio: ['pipe', 'ignore', 'ignore'] });
+    execSync(`git rev-parse --verify ${ref}`, { stdio: ['pipe', 'ignore', 'ignore'], cwd });
     return true;
   } catch {
     return false;
@@ -119,7 +121,7 @@ function isTestFile(path) {
     // "source changed with no test changes" check fire on every such PR.
     /\.(test|spec)\.[mc]?[jt]sx?$/.test(path) ||
     /__(?:tests?|specs?)__/.test(path) ||
-    /\/tests?\//.test(path) ||
+    /(?:^|\/)tests?\//.test(path) ||
     /_test\.[a-z]+$/.test(path)
   );
 }
@@ -127,15 +129,26 @@ function isTestFile(path) {
 // A trailing `// nosecret` (or `# nosecret`) comment suppresses the secret
 // check for that one line — an explicit, auditable, per-line escape hatch
 // for genuine false positives (test fixtures, docs examples) that no regex
-// can fully anticipate, without weakening the patterns themselves.
+// can fully anticipate, without weakening the patterns themselves. Honored
+// only in test and docs files: anywhere else it would let a real
+// credential through with a one-comment edit, and the block message is
+// exactly where an assistant would learn that edit.
 const SUPPRESS_MARKER = /(?:\/\/|#)\s*nosecret\s*$/;
+
+function isDocsFile(path) {
+  return /(?:^|\/)docs?\//.test(path) || /\.(?:md|mdx|rst|txt)$/i.test(path);
+}
+
+function allowsSuppressMarker(path) {
+  return isTestFile(path) || isDocsFile(path);
+}
 
 // Added lines ({ file, lineNum, content }) → one { file, lineNum, name }
 // per secret pattern matched.
 function findSecrets(addedLines) {
   const found = [];
   for (const { file, lineNum, content } of addedLines) {
-    if (SUPPRESS_MARKER.test(content)) continue;
+    if (SUPPRESS_MARKER.test(content) && allowsSuppressMarker(file)) continue;
     for (const { re, name } of SECRET_PATTERNS) {
       if (re.test(content)) found.push({ file, lineNum, name });
     }
@@ -143,7 +156,14 @@ function findSecrets(addedLines) {
   return found;
 }
 
-module.exports = { findSecrets };
+function secretFix(file) {
+  const base = 'Move to environment variable or secrets manager; never commit credentials.';
+  return allowsSuppressMarker(file)
+    ? `${base} If this is a genuine false positive (e.g. a test fixture), add a trailing \`// nosecret\` comment.`
+    : `${base} If you believe this is a false positive, stop and ask the user — do not rewrite the value to evade the pattern.`;
+}
+
+module.exports = { findSecrets, secretFix };
 
 // Only run the stdin-driven hook lifecycle when executed directly (how
 // Claude Code invokes it) — not when require()'d from the test file.
@@ -172,9 +192,22 @@ function runHook() {
     }
 
     // ── Gather diff ─────────────────────────────────────────────────────────────
-    let diffText = run('git diff --staged');
+    // From the repo being pushed, not this hook's own working directory —
+    // `cd ../other && git push` or `git -C ../other push` from a session
+    // rooted elsewhere would otherwise audit the wrong repository.
+    const repoDir = pushTargetDir(cmd) || process.cwd();
+    let diffText = run('git diff --staged', repoDir);
     let diffSource = 'staged';
-    let changedFiles = run('git diff --staged --name-only').trim();
+    let changedFiles = run('git diff --staged --name-only', repoDir).trim();
+
+    if (!changedFiles && refExists('@{u}', repoDir)) {
+      // Every commit the push would send, not just the last one.
+      changedFiles = run('git diff @{u} HEAD --name-only', repoDir).trim();
+      if (changedFiles) {
+        diffText = run('git diff @{u} HEAD', repoDir);
+        diffSource = '@{u}..HEAD';
+      }
+    }
 
     if (!changedFiles) {
       // HEAD~1 doesn't exist for a repo's root commit (first-ever push, or a
@@ -183,11 +216,11 @@ function runHook() {
       // empty-tree object so root commits get audited for real instead of
       // being waved through as an empty changeset.
       const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
-      const hasParent = refExists('HEAD~1');
+      const hasParent = refExists('HEAD~1', repoDir);
       const baseRef = hasParent ? 'HEAD~1' : EMPTY_TREE;
-      diffText = run(`git diff ${baseRef}`);
+      diffText = run(`git diff ${baseRef}`, repoDir);
       diffSource = hasParent ? 'HEAD~1' : 'root commit (vs. empty tree)';
-      changedFiles = run(`git diff ${baseRef} --name-only`).trim();
+      changedFiles = run(`git diff ${baseRef} --name-only`, repoDir).trim();
     }
 
     if (!changedFiles) {
@@ -206,7 +239,7 @@ function runHook() {
       findings.push({
         file, line: lineNum, severity: 'high',
         issue: `Possible ${name} detected`,
-        fix: 'Move to environment variable or secrets manager; never commit credentials. If this is a genuine false positive (e.g. a test fixture), add a trailing `// nosecret` comment.',
+        fix: secretFix(file),
       });
     }
 
@@ -283,7 +316,7 @@ function runHook() {
 
     const report = [
       `PRE-PUSH AUDIT — ${verdict}`,
-      `Audited: git diff ${diffSource} (${fileList.length} file(s) changed)`,
+      `Audited: git diff ${diffSource} in ${repoDir} (${fileList.length} file(s) changed)`,
       '',
       findings.length > 0 ? rows : '  No findings.',
       '',

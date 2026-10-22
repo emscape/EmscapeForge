@@ -16,6 +16,10 @@
 // parser: it covers the forms seen in practice and in review, and errs
 // toward recognizing a command rather than missing it.
 
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
 // One shell word as it appears in the raw command string: any run of
 // unquoted non-space characters and quoted regions, concatenated —
 // `"C:\Work Tree"`, `'/a b'`, and `user.name="A B"` are each one word. An
@@ -245,25 +249,91 @@ function normalizeSegment(segment) {
   return s;
 }
 
+// Git Bash spells Windows drives as `/c/repos/x`; Node on Windows would
+// resolve that against the current drive as `C:\c\repos\x`.
+function toNativePath(p) {
+  if (process.platform !== 'win32') return p;
+  const m = p.match(/^\/([a-zA-Z])(?:\/(.*))?$/);
+  return m ? `${m[1].toUpperCase()}:\\${(m[2] || '').replace(/\//g, '\\')}` : p;
+}
+
+// A directory argument as written (`"C:\Work Tree"`, `~/x`, `../y`)
+// resolved against `base`, or null when it can't be known statically —
+// `cd -`, a `$VAR`, a command substitution, or no known base.
+function resolveDirArg(base, rawArg) {
+  if (base === null) return null;
+  const arg = stripSurroundingQuotes(rawArg || '~');
+  if (arg === '-' || /[$`]/.test(arg)) return null;
+  if (arg === '~') return os.homedir();
+  if (arg.startsWith('~/')) return path.join(os.homedir(), arg.slice(2));
+  return path.resolve(base, toNativePath(arg));
+}
+
+const CD_COMMAND = new RegExp(`^(?:cd|pushd)(?:\\s+(${WORD}))?\\s*$`);
+const GIT_DASH_C = new RegExp(`^-C\\s+(${WORD})\\s*`);
+
+// The directory a git command runs in: each `-C <dir>` global option
+// resolves against the one before it, as git itself does.
+function gitDir(segment, base) {
+  const s = stripCommandPathPrefix(stripPrefixes(segment));
+  if (!/^git\s+/.test(s)) return base;
+  let rest = s.slice('git '.length).trimStart();
+  let dir = base;
+  let prev;
+  do {
+    prev = rest;
+    const m = rest.match(GIT_DASH_C);
+    if (m) {
+      dir = resolveDirArg(dir, m[1]);
+      rest = rest.slice(m[0].length);
+    } else {
+      rest = rest
+        .replace(GIT_GLOBAL_ARG_FLAG_COMBINED, '')
+        .replace(GIT_GLOBAL_ARG_FLAG_SEPARATE, '')
+        .replace(GIT_GLOBAL_NO_ARG_FLAG, '');
+    }
+  } while (rest !== prev);
+  return dir;
+}
+
 // Every command a raw Bash command string would run, flattened: split on
 // chain operators, with shell -c wrappers unwrapped recursively. Prefixes
 // are stripped *before* testing for a wrapper — otherwise `env bash -c
 // "gh pr merge 27"` is never seen as a wrapper (it starts with `env`) and
 // stripping `env` afterward leaves an un-expanded `bash -c ...`.
 //
-// Returns [{ raw, normalized }]: `raw` is the segment as written, for
-// human-readable reports; `normalized` is what anchored checks run on.
-function commandSegments(fullCmd) {
+// Returns [{ raw, normalized, cwd }]: `raw` is the segment as written, for
+// human-readable reports; `normalized` is what anchored checks run on;
+// `cwd` is the directory the command runs in, after any earlier `cd`/
+// `pushd` and its own `git -C` (null when that can't be known statically).
+// A `cd` inside a shell wrapper doesn't carry out of it, as in a real shell.
+function commandSegments(fullCmd, startDir = process.cwd()) {
   const out = [];
+  let dir = startDir;
   for (const raw of segmentsOf(fullCmd)) {
     const inner = unwrapShellDashC(stripPrefixes(raw));
     if (inner !== null) {
-      out.push(...commandSegments(inner));
-    } else {
-      out.push({ raw, normalized: normalizeSegment(raw) });
+      out.push(...commandSegments(inner, dir));
+      continue;
     }
+    const normalized = normalizeSegment(raw);
+    if (/^(?:cd|pushd|popd)(?:\s|$)/.test(normalized)) {
+      // A form this can't follow (`cd $(...)`, `popd`) makes the directory
+      // unknown rather than silently leaving it where it was.
+      const cd = normalized.match(CD_COMMAND);
+      dir = cd && !normalized.startsWith('popd') ? resolveDirArg(dir, cd[1]) : null;
+    }
+    out.push({ raw, normalized, cwd: gitDir(raw, dir) });
   }
   return out;
+}
+
+// The directory the first `git push` in the command runs in, if it can be
+// determined and exists; otherwise null.
+function pushTargetDir(fullCmd, startDir = process.cwd()) {
+  const push = commandSegments(fullCmd, startDir).find((s) => /^git\s+push(?:\s|$)/.test(s.normalized));
+  if (!push || push.cwd === null) return null;
+  return fs.existsSync(push.cwd) ? push.cwd : null;
 }
 
 // True if any command in the string is an actual `git push`.
@@ -288,6 +358,7 @@ module.exports = {
   commandSegments,
   isGitPush,
   normalizeSegment,
+  pushTargetDir,
   segmentsOf,
   stripLeadingEnvPrefix,
   stripSurroundingQuotes,

@@ -56,9 +56,12 @@ function isEnabled() {
   }
 }
 
-function currentBranch() {
+// The branch checked out in `cwd` — the repo the command actually targets
+// (after any `cd`/`git -C`), not this hook's own working directory. An
+// unknown target (`cd "$VAR"`) falls back to the hook's directory.
+function currentBranch(cwd) {
   try {
-    return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd: cwd || undefined }).trim();
   } catch {
     return null; // not a git repo / no commits yet — nothing to protect
   }
@@ -160,8 +163,8 @@ function protectedRefspecPush(segment) {
   return null;
 }
 
-// `getCurrentBranch` defaults to the real `currentBranch()` (a live `git
-// rev-parse` call) but is overridable — tests inject a fixed value instead
+// `getCurrentBranch(dir)` defaults to the real `currentBranch()` (a live `git
+// rev-parse` call in `dir`) but is overridable — tests inject a fixed value instead
 // of depending on whatever branch happens to be checked out in the real
 // repo when they run, which would otherwise make any test exercising the
 // "no explicit branch/refspec given" fallback path non-deterministic.
@@ -183,12 +186,12 @@ function findMergeReason(fullCmd, getCurrentBranch = currentBranch) {
   const checkedOutTo = normalized
     .map(checkoutTarget)
     .find((target) => target && PROTECTED_BRANCHES.includes(target));
-  let effectiveBranchCache;
-  function effectiveBranch() {
-    if (effectiveBranchCache === undefined) {
-      effectiveBranchCache = checkedOutTo || getCurrentBranch();
-    }
-    return effectiveBranchCache;
+  // Cached per directory: `git -C a push && git -C b merge x` asks two repos.
+  const branchByDir = new Map();
+  function effectiveBranch(dir) {
+    if (checkedOutTo) return checkedOutTo;
+    if (!branchByDir.has(dir)) branchByDir.set(dir, getCurrentBranch(dir));
+    return branchByDir.get(dir);
   }
 
   for (let i = 0; i < segments.length; i++) {
@@ -246,7 +249,7 @@ function findMergeReason(fullCmd, getCurrentBranch = currentBranch) {
       }
       const nonFlags = rest.filter((t) => !t.startsWith('-'));
       if (nonFlags.length <= 1) {
-        const branch = effectiveBranch();
+        const branch = effectiveBranch(parsed[i].cwd);
         if (branch && PROTECTED_BRANCHES.includes(branch)) {
           return `implicit push (no explicit branch/refspec given) while on protected branch "${branch}" — matched: ${segments[i]}`;
         }
@@ -256,9 +259,9 @@ function findMergeReason(fullCmd, getCurrentBranch = currentBranch) {
 
   // Local `git merge` while sitting on (or about to check out to) a
   // protected branch.
-  const hasMerge = normalized.some((s) => /^git\s+merge\b/.test(s));
-  if (hasMerge) {
-    const branch = effectiveBranch();
+  for (let i = 0; i < normalized.length; i++) {
+    if (!/^git\s+merge\b/.test(normalized[i])) continue;
+    const branch = effectiveBranch(parsed[i].cwd);
     if (branch && PROTECTED_BRANCHES.includes(branch)) {
       return `local \`git merge\` on protected branch "${branch}"`;
     }

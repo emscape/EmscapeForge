@@ -39,7 +39,7 @@
 
 const { execSync } = require('child_process');
 const { loadHookConfig } = require('./lib/hook-config.cjs');
-const { commandSegments, stripLeadingEnvPrefix, stripSurroundingQuotes } = require('./lib/git-command.cjs');
+const { commandSegments, pushTargetDir, stripLeadingEnvPrefix, stripSurroundingQuotes } = require('./lib/git-command.cjs');
 
 function isEnabled() {
   try {
@@ -56,9 +56,9 @@ function isEnabled() {
   }
 }
 
-function tryRun(cmd) {
+function tryRun(cmd, cwd) {
   try {
-    return { ok: true, out: execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }) };
+    return { ok: true, out: execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd }) };
   } catch (e) {
     return { ok: false, out: e.stdout || '', err: e.stderr || String(e) };
   }
@@ -175,13 +175,17 @@ function runHook() {
     const branches = extractDeletedBranches(cmd);
     if (branches.length === 0) process.exit(0); // not a delete push — allow
 
-    const ghAuth = tryRun('gh auth status');
+    // Open PRs of the repo being pushed to (after any `cd`/`git -C`), not
+    // this hook's own working directory; unknown targets fall back to it.
+    const repoDir = pushTargetDir(cmd) || process.cwd();
+
+    const ghAuth = tryRun('gh auth status', repoDir);
     if (!ghAuth.ok) {
       console.error('[branch-delete-guard] gh CLI not available/authenticated — cannot check for stacked PRs depending on this branch. Allowing, but verify manually with `gh pr list --state open` first.');
       process.exit(0);
     }
 
-    const prList = tryRun('gh pr list --state open --json number,baseRefName,headRefName,title --limit 200');
+    const prList = tryRun('gh pr list --state open --json number,baseRefName,headRefName,title --limit 200', repoDir);
     if (!prList.ok || !prList.out.trim()) {
       console.error(`[branch-delete-guard] \`gh pr list\` ${prList.ok ? 'returned no output' : 'failed'} — cannot check for stacked PRs depending on this branch. Allowing, but verify manually with \`gh pr list --state open\` before deleting.${prList.err ? `\n${prList.err}` : ''}`);
       process.exit(0);

@@ -241,6 +241,17 @@ test('findMergeReason', async (t) => {
     assert.equal(blocked('git push origin', onMaster), true);
   });
 
+  // Stand-in where only the repo at <cwd>/other is on master.
+  const onlyOtherOnMaster = (dir) => (dir && dir.endsWith(`${require('node:path').sep}other`) ? 'master' : 'fix/unrelated-feature');
+
+  await t.test('the current branch is read from the repo the command targets', () => {
+    assert.equal(blocked('git -C other push origin', onlyOtherOnMaster), true);
+    assert.equal(blocked('cd other && git push', onlyOtherOnMaster), true);
+    assert.equal(blocked('git -C other merge feature', onlyOtherOnMaster), true);
+    assert.equal(blocked('git push origin', onlyOtherOnMaster), false);
+    assert.equal(blocked('cd other && git checkout feature && cd .. && git merge feature', onlyOtherOnMaster), false);
+  });
+
   await t.test('an explicit different-branch push is not swept in just because HEAD is on a protected branch', () => {
     assert.equal(blocked('git push origin some-other-branch', onMaster), false);
   });
