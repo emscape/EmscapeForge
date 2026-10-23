@@ -1,0 +1,14 @@
+{
+  "project_name": "EmscapeForge",
+  "session_start": {
+    "custom_notes": [
+      "Windows 11 + Git Bash. All website commands run from the website/ subdirectory.",
+      "Never commit directly to master for feature work; every change gets its own branch + PR.",
+      "Deploy is GitHub Pages via .github/workflows/deploy.yml, triggered by a push to master."
+    ]
+  },
+  "ci_status_check": {
+    "enabled": false,
+    "_comment": "The only workflow (deploy.yml) runs on pushes to master, so feature-branch pushes have no CI run to wait for and the check would time out. Re-enable if a branch/PR CI workflow is added."
+  }
+}
