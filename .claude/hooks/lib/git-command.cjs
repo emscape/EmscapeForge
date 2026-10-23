@@ -442,13 +442,71 @@ function stripSurroundingQuotes(token) {
   return token;
 }
 
+// A segment's shell words with their quotes removed: `"/tmp/remote repo"`
+// is one word, and `feat"ure"` is `feature`. Backslash escapes and
+// expansions are left as written.
+function shellWords(segment) {
+  return (segment.match(new RegExp(WORD, 'g')) || []).map((word) =>
+    word.replace(/"([^"]*)"|'([^']*)'/g, (_, dq, sq) => dq ?? sq)
+  );
+}
+
+// `git push` options whose value is the next word, so it isn't mistaken
+// for the remote or a refspec.
+const PUSH_ARG_FLAGS = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec']);
+
+// Flags that push a whole set of refs instead of (or as well as) the
+// refspecs given.
+const PUSH_SET_FLAGS = new Set(['--all', '--branches', '--mirror', '--tags']);
+
+// The arguments of a normalized `git push` segment: `remote` (the first
+// positional, or `--repo`; null when omitted), `refspecs` (as written,
+// `tag <name>` folded into `refs/tags/<name>`), `sets` (any of --all,
+// --branches, --mirror, --tags) and `deletes` (--delete/-d given).
+function pushArgs(segment) {
+  const args = shellWords(segment).slice(2);
+  const positional = [];
+  const sets = [];
+  let repo = null;
+  let deletes = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--delete' || arg === '-d') deletes = true;
+    else if (PUSH_SET_FLAGS.has(arg)) sets.push(arg);
+    else if (arg === '--repo') repo = args[++i] || null;
+    else if (arg.startsWith('--repo=')) repo = arg.slice('--repo='.length) || null;
+    else if (PUSH_ARG_FLAGS.has(arg)) i++;
+    else if (!arg.startsWith('-')) positional.push(arg);
+  }
+  const remote = repo ?? positional.shift() ?? null;
+  const refspecs = [];
+  for (let i = 0; i < positional.length; i++) {
+    if (positional[i] === 'tag' && i + 1 < positional.length) refspecs.push(`refs/tags/${positional[++i]}`);
+    else refspecs.push(positional[i]);
+  }
+  return { remote, refspecs, sets, deletes };
+}
+
+// A refspec's source and destination: `+feature:main` → { src: 'feature',
+// dest: 'main' }; a bare `feature` is both. An empty `src` (`:feature`)
+// is a delete.
+function splitRefspec(refspec) {
+  const spec = refspec.replace(/^\+/, '');
+  const colon = spec.indexOf(':');
+  const src = colon === -1 ? spec : spec.slice(0, colon);
+  const dest = colon === -1 ? spec : spec.slice(colon + 1) || src;
+  return { src, dest };
+}
+
 module.exports = {
   commandSegments,
   firstPushSegment,
   isGitPush,
   normalizeSegment,
+  pushArgs,
   pushTargetDir,
   segmentsOf,
+  splitRefspec,
   stripLeadingEnvPrefix,
   stripSurroundingQuotes,
 };

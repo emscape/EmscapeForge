@@ -1,6 +1,6 @@
 // check-merge-guard.test.js
 // Behavioral tests for the pure detection logic in check-merge-guard.js —
-// run with `node --test .claude/hooks/`.
+// run with `node --test *.test.js *.test.cjs lib/*.test.cjs` from the hooks directory.
 //
 // check-merge-guard.js only runs its stdin-driven hook lifecycle when
 // executed directly (`require.main === module`), so it's safe to

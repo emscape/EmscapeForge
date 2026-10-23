@@ -1,6 +1,6 @@
 // check-search-command.test.js
 // Behavioral tests for the command detection in check-search-command.js —
-// run with `node --test claude/hooks/*.test.js`.
+// run with `node --test *.test.js *.test.cjs lib/*.test.cjs` from the hooks directory.
 //
 // The hook only runs its stdin-driven lifecycle when executed directly
 // (`require.main === module`), so requiring it here is safe.

@@ -37,7 +37,7 @@
 
 'use strict';
 
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const { loadHookConfig } = require('./lib/hook-config.cjs');
 const { commandSegments, pushTargetDir, stripLeadingEnvPrefix, stripSurroundingQuotes } = require('./lib/git-command.cjs');
 
@@ -56,9 +56,12 @@ function isEnabled() {
   }
 }
 
+// `cmd` is a shell string, or a [file, ...args] array run without a shell —
+// for arguments such as branch names, which git lets contain `$`, `;`, `&`.
 function tryRun(cmd, cwd) {
+  const opts = { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd };
   try {
-    return { ok: true, out: execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd }) };
+    return { ok: true, out: Array.isArray(cmd) ? execFileSync(cmd[0], cmd.slice(1), opts) : execSync(cmd, opts) };
   } catch (e) {
     return { ok: false, out: e.stdout || '', err: e.stderr || String(e) };
   }
@@ -148,7 +151,42 @@ function extractDeletedBranches(fullCmd) {
   return [...branches];
 }
 
-module.exports = { extractDeletedBranches, stripLeadingEnvPrefix, normalizeBranchName, isEnabled, tryRun };
+// The open PRs basing off each branch: `{ affected, warnings }`, where
+// `affected` lists only branches with dependents (`{ branch, dependents }`)
+// and `warnings` names each branch whose lookup can't be trusted. Every
+// branch is looked up, so one failed query can't hide a dependent found
+// for another: the caller blocks on any `affected` entry and allows (with
+// the warnings) only when there are none. One query per branch, filtered by base on GitHub's side, so a dependent PR can't
+// fall past the first page of every open PR in a busy repo. Any result
+// blocks, so the limit only caps the report. `run` defaults to tryRun;
+// tests inject a fake, since a stub `gh.cmd` on PATH isn't found by a
+// shell-less spawn on Windows.
+function findDependents(branches, repoDir, run = tryRun) {
+  const affected = [];
+  const warnings = [];
+  for (const branch of branches) {
+    const prList = run(['gh', 'pr', 'list', '--state', 'open', '--base', branch, '--json', 'number,headRefName,title', '--limit', '100'], repoDir);
+    if (!prList.ok || !prList.out.trim()) {
+      warnings.push(`[branch-delete-guard] \`gh pr list\` ${prList.ok ? 'returned no output' : 'failed'} — cannot check for stacked PRs depending on "${branch}". Verify manually with \`gh pr list --state open --base ${branch}\` before deleting it.${prList.err ? `\n${prList.err}` : ''}`);
+      continue;
+    }
+
+    let dependents;
+    try {
+      dependents = JSON.parse(prList.out);
+    } catch {
+      dependents = null;
+    }
+    if (!Array.isArray(dependents)) {
+      warnings.push(`[branch-delete-guard] Could not parse \`gh pr list\` output for "${branch}" — verify manually before deleting it.`);
+      continue;
+    }
+    if (dependents.length > 0) affected.push({ branch, dependents });
+  }
+  return { affected, warnings };
+}
+
+module.exports = { extractDeletedBranches, stripLeadingEnvPrefix, normalizeBranchName, isEnabled, tryRun, findDependents };
 
 // Only run the stdin-driven hook lifecycle when this file is executed
 // directly (`node check-branch-delete-guard.js`, which is how Claude Code
@@ -191,28 +229,11 @@ function runHook() {
       process.exit(0);
     }
 
-    const prList = tryRun('gh pr list --state open --json number,baseRefName,headRefName,title --limit 200', repoDir);
-    if (!prList.ok || !prList.out.trim()) {
-      console.error(`[branch-delete-guard] \`gh pr list\` ${prList.ok ? 'returned no output' : 'failed'} — cannot check for stacked PRs depending on this branch. Allowing, but verify manually with \`gh pr list --state open\` before deleting.${prList.err ? `\n${prList.err}` : ''}`);
+    const { affected, warnings } = findDependents(branches, repoDir);
+    if (affected.length === 0) {
+      for (const warning of warnings) console.error(warning);
       process.exit(0);
     }
-
-    let openPrs;
-    try {
-      openPrs = JSON.parse(prList.out);
-    } catch {
-      console.error('[branch-delete-guard] Could not parse `gh pr list` output — allowing, but verify manually before deleting.');
-      process.exit(0);
-    }
-
-    const affected = branches
-      .map((branch) => ({
-        branch,
-        dependents: openPrs.filter((pr) => pr.baseRefName === branch),
-      }))
-      .filter((entry) => entry.dependents.length > 0);
-
-    if (affected.length === 0) process.exit(0);
 
     const rows = affected
       .flatMap(({ branch, dependents }) =>
@@ -234,6 +255,7 @@ function runHook() {
       'Fix: retarget the dependent PR(s) above to their real final base first',
       '(`gh pr edit <number> --base <new-base>`), confirm it shows a clean/correct',
       'diff, then delete this branch.',
+      ...(warnings.length > 0 ? ['', 'Also unchecked:', ...warnings] : []),
     ].join('\n');
 
     console.error(report);

@@ -12,7 +12,7 @@ All behavior is controlled by **`config.json`** — no project logic is hardcode
 |---|---|
 | `config.json` | Shared defaults for the config-aware hooks; four hooks ignore it (see "Hooks that ignore config") (per-project overrides: `<project>/.claude/hooks.config.json`, see "Project-local overrides") |
 | `lib/hook-config.cjs` | Shared loader: reads `config.json` from the hooks directory and merges the optional project-local override over it |
-| `lib/git-command.cjs` | Shared command parser for the git/gh guards (merge, branch-delete, push-audit, CI status): quote-aware segment splitting, env/sudo/`bash -c` unwrapping, path-qualified binaries, and git/gh global options such as `git -C "<dir>"` |
+| `lib/git-command.cjs` | Shared command parser for the git/gh guards (merge, branch-delete, push-audit, CI status): quote-aware segment splitting, env/sudo/`bash -c` unwrapping, path-qualified binaries, git/gh global options such as `git -C "<dir>"`, `$(...)`/backtick substitutions and `( ... )` subshells parsed as commands of their own, and the working directory each command runs in, tracked through `cd`/`pushd` and `git -C` (unknown for `cd "$VAR"`, `cd -` and the like) |
 | `check-arch-boundary.js` | PreToolUse: block file writes that violate package rules |
 | `check-dep-guard.js` | PreToolUse: warn on dependency installs |
 | `check-script-exists.js` | PreToolUse: warn/block when an npm run script doesn't exist; detect no-op commands |
@@ -30,7 +30,11 @@ All behavior is controlled by **`config.json`** — no project logic is hardcode
 | `session-start.sh` | Optional manual wrapper that invokes session-start.cjs (no longer registered in hooks.json) |
 | `session-start.cjs` | SessionStart: loads config through `lib/hook-config.cjs` and prints the project orientation banner (project name defaults to the project directory basename) |
 | `hooks.json` | Human-readable reference copy of the settings.json hooks block |
-| `check-branch-delete-guard.test.js`, `check-merge-guard.test.js`, `check-git-push-audit.test.js`, `check-ci-status-after-push.test.js`, `lib/git-command.test.cjs` | Behavioral tests for the pure detection/extraction logic each guard exports — run with `node --test .claude/hooks/` |
+| `check-branch-delete-guard.test.js`, `check-merge-guard.test.js`, `check-git-push-audit.test.js`, `check-ci-status-after-push.test.js`, `check-search-command.test.js`, `lib/git-command.test.cjs` | Behavioral tests for each guard's detection/extraction logic, plus lifecycle tests that run the hook on stdin JSON (the push audit against throwaway git repos) |
+| `hook-config-integration.test.cjs`, `lib/hook-config.test.cjs` | Tests for the config loader, project-local overrides and hook registration |
+
+Run every test from the hooks directory with `node --test *.test.js *.test.cjs lib/*.test.cjs`. A bare
+directory argument (`node --test .claude/hooks/`) errors on Node 22.
 
 The actual hook registration lives in **`.claude/settings.json`**, not `hooks.json`.
 
@@ -279,6 +283,9 @@ defeat the point. Blocks (exit 2), every time, with no exceptions:
 - a local `git merge` performed while on, or checking out to, `master`/`main`
 - a `git push` (refspec or plain branch name) that lands commits directly on `master`/`main`,
   bypassing PR + merge entirely
+- an implicit push (`git push` with no refspec) or a `git merge` whose repository or current
+  branch can't be determined (`cd "$VAR" && git push`) — rather than guessing from the hook's own
+  directory, it asks for a literal path or branch
 
 This hook doesn't try to tell whether permission to merge was already given earlier in the
 conversation — it can't read the chat, and it exists specifically because "no objections raised"
@@ -303,8 +310,24 @@ Audit a `git push`'s diff before it goes out:
 No fields beyond `enabled` (extend `check-git-push-audit.js` directly for different patterns).
 `check-git-push-audit.js` does not read config, so the audit runs whenever the hook is registered
 and the `enabled` flag has no effect.
-Runs on every `git push`, auditing the diff (staged changes, or `HEAD~1`, or the empty tree for a
-root commit) for:
+Runs on every `git push`, in the repository the push targets (after any `cd`/`git -C`). It audits
+the staged diff together with the patch of every commit the push sends:
+`git log -p <pushed refs> --not --remotes=<remote>`.
+
+- **Pushed refs** are each refspec's source (`release` in `git push origin release:main`, not
+  `HEAD`), `--branches` for `--all`/`--branches`, `--all` for `--mirror`, `--tags` for `--tags`. With no
+  refspec: every ref if the remote has configured push refspecs, every branch under
+  `push.default=matching`, otherwise `HEAD`. A pushed ref that doesn't resolve to a commit (`"$BRANCH"`, a
+  typo) blocks the push.
+- **The remote** is the one being pushed to (or, for a bare `git push`, the one git would push
+  to), so a commit already on `origin` is still audited when pushed to `backup`. A remote given as
+  a URL or path has no tracking refs, so the pushed refs' whole history is audited.
+
+Commits are read one patch at a time, so a secret added in one commit and deleted in a later one
+is still caught, and a new branch's first push has all its commits audited, not just the last.
+Only when no commit is outgoing does it fall back to `HEAD~1..HEAD` (or the empty tree for a root
+commit). When the target repository can't be determined (`cd "$VAR" && git push`), the push is
+blocked instead of auditing some other directory. It checks for:
 
 | Check | Severity | Trigger |
 |---|---|---|
@@ -316,6 +339,11 @@ root commit) for:
 
 Only the `secrets` check actually blocks (exit 2); everything else is reported to stderr but
 non-blocking.
+
+A trailing `// nosecret` or `# nosecret` marker suppresses a secret finding on that line, but only
+in test files and docs (`docs/`, `.md`, `.mdx`, `.rst`, `.txt`). In production source the marker is
+ignored and the block message asks to stop and check with the user, so a real credential can't be
+waved through by annotating it.
 
 ---
 
@@ -333,9 +361,12 @@ No fields beyond `enabled`. Fires on `git push <remote> --delete <branch>` and t
 shorthand — local `git branch -D` is intentionally out of scope, since that alone can't break a
 GitHub PR's base. Deleting a branch that's still an open PR's base doesn't merge that PR; GitHub
 auto-closes it instead (its commits usually aren't in the new target yet), and a closed PR's base
-can't be retargeted — the only recovery is opening a brand-new PR from the same commits. Requires
-the `gh` CLI, authenticated — fails open (allows, with a warning) if `gh` is unavailable, so a
-stale check never blocks otherwise-normal work.
+can't be retargeted — the only recovery is opening a brand-new PR from the same commits. For each
+deleted branch it asks GitHub for open PRs with that branch as their base (`gh pr list --base`), so
+the check doesn't depend on how many PRs the repository has open. Every branch is looked up even
+if one lookup fails, so a dependent PR found for one branch still blocks. Requires the `gh` CLI,
+authenticated — fails open (allows, with a warning) if `gh` is unavailable or the target
+repository can't be determined, so a stale check never blocks otherwise-normal work.
 
 ---
 
@@ -364,6 +395,12 @@ local test pass is not proof of a green remote run — this makes the wait for C
 implicit. If the repo has no GitHub Actions workflow, it harmlessly reports "no run found" once
 per push and exits 1 informationally. Adds real wall-clock wait time to every push, roughly
 however long CI takes to run.
+
+It waits for the branch and commit the push actually sent, taken from the refspec
+(`git push origin feature` from another branch, or `feature:main`), not the current branch.
+It skips, with a message saying why, when no single branch commit stands for the push: a delete,
+a tag or other non-branch destination, `--all`/`--branches`/`--mirror`/`--tags` (check each
+branch's CI manually), or a target repository that can't be determined.
 
 ---
 
@@ -477,7 +514,7 @@ Control the orientation banner:
 
 ## Project-local overrides
 
-Hooks are usually symlinked into many projects, so `config.json` is shared. A project can override
+The hooks are shared by many projects (symlinked, or copied on Windows), so `config.json` is shared too. A project can override
 it with an optional file at **`<project>/.claude/hooks.config.json`**. The project directory is
 resolved from `CLAUDE_PROJECT_DIR`, then the current working directory.
 

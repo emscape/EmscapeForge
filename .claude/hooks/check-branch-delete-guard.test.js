@@ -1,6 +1,6 @@
 // check-branch-delete-guard.test.js
 // Behavioral tests for the pure extraction logic in
-// check-branch-delete-guard.js — run with `node --test .claude/hooks/`.
+// check-branch-delete-guard.js — run with `node --test *.test.js *.test.cjs lib/*.test.cjs` from the hooks directory.
 //
 // check-branch-delete-guard.js only runs its stdin-driven hook lifecycle
 // when executed directly (`require.main === module`), so it's safe to
@@ -15,7 +15,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { extractDeletedBranches } = require('./check-branch-delete-guard.js');
+const { extractDeletedBranches, tryRun, findDependents } = require('./check-branch-delete-guard.js');
 
 function branches(cmd) {
   return extractDeletedBranches(cmd).sort();
@@ -215,5 +215,83 @@ test('hook lifecycle', async (t) => {
     const r = runHookWithoutGh('git push origin topic');
     assert.equal(r.status, 0);
     assert.equal(r.stderr, '');
+  });
+});
+
+// The PR lookup passes the branch name as an argument array: git allows
+// `$`, `;` and `&` in branch names, and a shell would act on them.
+test('tryRun', async (t) => {
+  await t.test('an argument array runs without a shell, so metacharacters stay literal', () => {
+    const r = tryRun([process.execPath, '-e', 'process.stdout.write(process.argv[1])', 'feat$x;echo&hi']);
+    assert.equal(r.ok, true, r.err);
+    assert.equal(r.out, 'feat$x;echo&hi');
+  });
+});
+
+// A fake `gh pr list` runner: `results` maps a --base branch to what the
+// call returns. Records every argument array it's given.
+function fakeRun(results) {
+  const calls = [];
+  const run = (args, cwd) => {
+    calls.push({ args, cwd });
+    const base = args[args.indexOf('--base') + 1];
+    return results[base] ?? { ok: true, out: '[]' };
+  };
+  return { run, calls };
+}
+
+test('findDependents', async (t) => {
+  const pr = (number, headRefName) => ({ number, headRefName, title: `PR ${number}` });
+
+  await t.test('queries each deleted branch separately, by base, in the target repo', () => {
+    const { run, calls } = fakeRun({});
+    const r = findDependents(['feature-a', 'feature-b'], '/repo', run);
+    assert.deepEqual(r, { affected: [], warnings: [] });
+    assert.deepEqual(calls.map((c) => c.args[c.args.indexOf('--base') + 1]), ['feature-a', 'feature-b']);
+    assert.ok(calls.every((c) => c.cwd === '/repo' && c.args[0] === 'gh' && c.args.includes('open')));
+  });
+
+  await t.test('a dependent PR on any one of several branches is reported for that branch only', () => {
+    const { run } = fakeRun({ 'feature-b': { ok: true, out: JSON.stringify([pr(12, 'stacked')]) } });
+    const r = findDependents(['feature-a', 'feature-b'], '/repo', run);
+    assert.deepEqual(r, { affected: [{ branch: 'feature-b', dependents: [pr(12, 'stacked')] }], warnings: [] });
+  });
+
+  await t.test('a branch name with shell metacharacters is passed through as one literal argument', () => {
+    const name = 'feat$x;echo&hi';
+    const { run, calls } = fakeRun({ [name]: { ok: true, out: JSON.stringify([pr(3, 'child')]) } });
+    const r = findDependents([name], '/repo', run);
+    assert.equal(calls[0].args[calls[0].args.indexOf('--base') + 1], name);
+    assert.equal(r.affected[0].branch, name);
+  });
+
+  const badResults = [
+    { ok: false, out: '', err: 'HTTP 502' },
+    { ok: true, out: '' },
+    { ok: true, out: 'not json' },
+    { ok: true, out: '{"message":"error"}' },
+  ];
+
+  await t.test('a failed, empty or unparsable lookup warns for that branch instead of reporting no dependents', () => {
+    for (const result of badResults) {
+      const { run } = fakeRun({ 'feature-b': result });
+      const r = findDependents(['feature-a', 'feature-b'], '/repo', run);
+      assert.deepEqual(r.affected, [], JSON.stringify(result));
+      assert.equal(r.warnings.length, 1, JSON.stringify(result));
+      assert.match(r.warnings[0], /"feature-b"/);
+    }
+  });
+
+  await t.test('a failed lookup for one branch keeps the dependents found for another, before or after it', () => {
+    const blocked = { ok: true, out: JSON.stringify([pr(7, 'child')]) };
+    for (const result of badResults) {
+      for (const order of [['has-pr', 'fails'], ['fails', 'has-pr']]) {
+        const { run, calls } = fakeRun({ 'has-pr': blocked, fails: result });
+        const r = findDependents(order, '/repo', run);
+        assert.equal(calls.length, 2, 'every branch is looked up');
+        assert.deepEqual(r.affected, [{ branch: 'has-pr', dependents: [pr(7, 'child')] }], JSON.stringify({ result, order }));
+        assert.equal(r.warnings.length, 1);
+      }
+    }
   });
 });

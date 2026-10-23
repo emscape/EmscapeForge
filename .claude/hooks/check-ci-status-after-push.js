@@ -24,7 +24,7 @@
 
 const { execFileSync } = require('child_process');
 const { loadHookConfig } = require('./lib/hook-config.cjs');
-const { firstPushSegment, isGitPush, pushTargetDir, stripSurroundingQuotes } = require('./lib/git-command.cjs');
+const { firstPushSegment, isGitPush, pushArgs, pushTargetDir, splitRefspec } = require('./lib/git-command.cjs');
 
 function readConfig() {
   try {
@@ -69,32 +69,33 @@ function shouldVerify(cmd) {
   return isGitPush(cmd);
 }
 
-// `git push` options whose value is the next word, so it isn't mistaken
-// for the remote or a refspec.
-const PUSH_ARG_FLAGS = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec']);
-
-// What a normalized `git push` segment pushes, from its first refspec:
+// What a normalized `git push` segment pushes, from its one refspec:
 // `{ src, dest }` (refs/heads/ stripped; a `dest` of `HEAD` means the
 // current branch), null when no refspec is given (git pushes the current
 // branch), or `{ skip }` when no branch commit is pushed (a delete, or a
 // tag or other non-branch destination). `git push origin feature` from
 // another branch, or `feature:main`, pushes something other than HEAD, so
 // HEAD and the current branch aren't the commit and branch to wait for.
-function pushedRef(segment) {
-  const args = segment.split(/\s+/).slice(2).map(stripSurroundingQuotes);
-  const positional = [];
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '--delete' || arg === '-d') return { skip: 'the push deletes a remote branch' };
-    if (PUSH_ARG_FLAGS.has(arg)) i++;
-    else if (!arg.startsWith('-')) positional.push(arg);
+// Multi-ref and tag-only pushes (`--all`, `--branches`, `--mirror`,
+// `--tags`, or several refspecs) have no single branch whose CI run
+// stands for them.
+//
+// With no refspec, git may still push several branches: the remote's
+// configured push refspecs, or every matching branch under
+// push.default=matching. `gitConfig(key)` reads a config value (empty when
+// unset); it defaults to none set.
+function pushedRef(segment, gitConfig = () => '') {
+  const { remote, refspecs, sets, deletes } = pushArgs(segment);
+  if (deletes) return { skip: 'the push deletes a remote branch' };
+  if (sets.length > 0) return { skip: `\`${sets[0]}\` pushes more than one branch's commit, so check CI for each pushed branch manually` };
+  if (refspecs.length === 0) {
+    if (gitConfig(`remote.${remote || 'origin'}.push`)) return { skip: "the push uses the remote's configured push refspecs, so check CI for each pushed branch manually" };
+    if (gitConfig('push.default') === 'matching') return { skip: 'push.default=matching pushes every matching branch, so check CI for each pushed branch manually' };
+    return null;
   }
-  if (positional.length < 2) return null; // [0] is the remote
+  if (refspecs.length > 1) return { skip: `the push sends ${refspecs.length} refspecs, so check CI for each pushed branch manually` };
 
-  const refspec = positional[1].replace(/^\+/, '');
-  const colon = refspec.indexOf(':');
-  const src = colon === -1 ? refspec : refspec.slice(0, colon);
-  const dest = colon === -1 ? refspec : refspec.slice(colon + 1) || src;
+  const { src, dest } = splitRefspec(refspecs[0]);
   if (!src) return { skip: 'the push deletes a remote branch' };
   if (/^refs\/(?!heads\/)/.test(dest)) return { skip: `the push updates ${dest}, not a branch` };
   return { src, dest: dest.replace(/^refs\/heads\//, '') };
@@ -140,7 +141,7 @@ function runHook() {
 
     // The commit and remote branch named by the push's refspec, falling
     // back to HEAD and the current branch when none is given.
-    const ref = pushedRef(firstPushSegment(cmd).normalized);
+    const ref = pushedRef(firstPushSegment(cmd).normalized, (key) => tryRun('git', ['config', '--get-all', key], repoDir).out.trim());
     if (ref?.skip) {
       console.error(`[ci-status-check] Skipping CI verification: ${ref.skip}.`);
       process.exit(0);

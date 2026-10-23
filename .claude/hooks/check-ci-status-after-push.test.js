@@ -1,6 +1,6 @@
 // check-ci-status-after-push.test.js
 // Behavioral tests for the push detection in check-ci-status-after-push.js
-// — run with `node --test claude/hooks/`.
+// — run with `node --test *.test.js *.test.cjs lib/*.test.cjs` from the hooks directory.
 //
 // The hook only runs its stdin-driven lifecycle when executed directly
 // (`require.main === module`), so requiring it here is safe.
@@ -70,6 +70,27 @@ test('pushedRef', async (t) => {
     assert.ok(pushedRef('git push origin --delete feature').skip);
     assert.ok(pushedRef('git push origin :feature').skip);
     assert.ok(pushedRef('git push origin v1.0:refs/tags/v1.0').skip);
+  });
+
+  await t.test('multi-ref and tag-only pushes are skipped, not checked as the current branch', () => {
+    assert.match(pushedRef('git push --all').skip, /--all/);
+    assert.match(pushedRef('git push origin --mirror').skip, /--mirror/);
+    assert.match(pushedRef('git push origin --tags').skip, /--tags/);
+    assert.match(pushedRef('git push --branches origin').skip, /--branches/);
+    assert.match(pushedRef('git push origin feature-a feature-b').skip, /2 refspecs/);
+  });
+
+  await t.test('a no-refspec push that git would expand to several branches is skipped', () => {
+    const config = (values) => (key) => values[key] || '';
+    assert.match(pushedRef('git push', config({ 'push.default': 'matching' })).skip, /matching/);
+    assert.match(pushedRef('git push backup', config({ 'remote.backup.push': 'refs/heads/*' })).skip, /configured push refspecs/);
+    assert.match(pushedRef('git push', config({ 'remote.origin.push': 'refs/heads/a' })).skip, /configured push refspecs/);
+    assert.equal(pushedRef('git push', config({ 'push.default': 'simple' })), null);
+    assert.deepEqual(pushedRef('git push origin feature', config({ 'push.default': 'matching' })), { src: 'feature', dest: 'feature' });
+  });
+
+  await t.test('a quoted remote containing a space is one argument', () => {
+    assert.deepEqual(pushedRef('git push "/tmp/remote repo" feature'), { src: 'feature', dest: 'feature' });
   });
 });
 

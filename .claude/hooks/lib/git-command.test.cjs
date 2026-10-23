@@ -1,6 +1,6 @@
 // lib/git-command.test.cjs
 // Behavioral tests for the shared command parser used by the git/gh guard
-// hooks — run with `node --test claude/hooks/`.
+// hooks — run with `node --test *.test.js *.test.cjs lib/*.test.cjs` from the hooks directory.
 
 'use strict';
 
@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
-const { commandSegments, isGitPush, pushTargetDir } = require('./git-command.cjs');
+const { commandSegments, isGitPush, pushArgs, pushTargetDir, splitRefspec } = require('./git-command.cjs');
 
 const BASE = path.resolve(os.tmpdir(), 'base');
 
@@ -235,4 +235,40 @@ test('isGitPush', async (t) => {
     assert.equal(isGitPush('git stash push'), false);
     assert.equal(isGitPush('git pushx'), false);
   });
+});
+
+test('pushArgs', async (t) => {
+  await t.test('splits the remote from the refspecs', () => {
+    assert.deepEqual(pushArgs('git push'), { remote: null, refspecs: [], sets: [], deletes: false });
+    assert.deepEqual(pushArgs('git push -u origin feature'), { remote: 'origin', refspecs: ['feature'], sets: [], deletes: false });
+    assert.deepEqual(pushArgs('git push origin a b:c'), { remote: 'origin', refspecs: ['a', 'b:c'], sets: [], deletes: false });
+  });
+
+  await t.test('--repo names the remote, and option values are skipped', () => {
+    assert.deepEqual(pushArgs('git push --repo backup feature').remote, 'backup');
+    assert.deepEqual(pushArgs('git push --repo=backup feature'), { remote: 'backup', refspecs: ['feature'], sets: [], deletes: false });
+    assert.deepEqual(pushArgs('git push -o ci.skip origin feature').refspecs, ['feature']);
+  });
+
+  await t.test('records ref-set flags and deletes', () => {
+    assert.deepEqual(pushArgs('git push --all origin').sets, ['--all']);
+    assert.deepEqual(pushArgs('git push origin main --tags').sets, ['--tags']);
+    assert.equal(pushArgs('git push origin --delete feature').deletes, true);
+  });
+
+  await t.test('folds `tag <name>` into one tag refspec and unquotes tokens', () => {
+    assert.deepEqual(pushArgs('git push origin tag v1.0').refspecs, ['refs/tags/v1.0']);
+    assert.deepEqual(pushArgs('git push "origin" "feature"'), { remote: 'origin', refspecs: ['feature'], sets: [], deletes: false });
+  });
+
+  await t.test('a quoted word with spaces stays one argument, and concatenated quotes are removed', () => {
+    assert.deepEqual(pushArgs('git push "/tmp/remote repo" feature'), { remote: '/tmp/remote repo', refspecs: ['feature'], sets: [], deletes: false });
+    assert.deepEqual(pushArgs("git push --repo '/tmp/a b' feat\"ure\""), { remote: '/tmp/a b', refspecs: ['feature'], sets: [], deletes: false });
+  });
+});
+
+test('splitRefspec', () => {
+  assert.deepEqual(splitRefspec('feature'), { src: 'feature', dest: 'feature' });
+  assert.deepEqual(splitRefspec('+release:main'), { src: 'release', dest: 'main' });
+  assert.deepEqual(splitRefspec(':gone'), { src: '', dest: 'gone' });
 });
