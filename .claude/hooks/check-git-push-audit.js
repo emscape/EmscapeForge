@@ -194,8 +194,16 @@ function runHook() {
     // ── Gather diff ─────────────────────────────────────────────────────────────
     // From the repo being pushed, not this hook's own working directory —
     // `cd ../other && git push` or `git -C ../other push` from a session
-    // rooted elsewhere would otherwise audit the wrong repository.
-    const repoDir = pushTargetDir(cmd) || process.cwd();
+    // rooted elsewhere would otherwise audit the wrong repository. An
+    // unknown or missing target blocks rather than auditing this hook's
+    // directory, which would pass secrets in the real target unseen.
+    const repoDir = pushTargetDir(cmd);
+    if (!repoDir) {
+      const report = 'PRE-PUSH AUDIT: Could not determine which repository this push targets (e.g. `cd "$VAR"`, or a `git -C` path that does not exist), so its changes cannot be audited. Push with a literal path instead.';
+      process.stderr.write(report + '\n');
+      process.stdout.write(JSON.stringify({ continue: false, stopReason: report }));
+      process.exit(2);
+    }
     let diffText = run('git diff --staged', repoDir);
     let diffSource = 'staged';
     let changedFiles = run('git diff --staged --name-only', repoDir).trim();

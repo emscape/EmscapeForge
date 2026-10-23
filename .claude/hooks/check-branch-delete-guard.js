@@ -120,7 +120,9 @@ function extractDeletedBranches(fullCmd) {
     if (!/^git\s+push\b/.test(segment)) continue;
 
     const tokens = segment.split(/\s+/); // tokens[0] === 'git', tokens[1] === 'push'
-    const rest = tokens.slice(2);
+    // Unquoted first: the shell strips the quotes from `"--delete"` before
+    // git sees it, so it's the same flag.
+    const rest = tokens.slice(2).map(stripSurroundingQuotes);
     const hasDeleteFlag = rest.some((t) => t === '--delete' || t === '-d');
     if (hasDeleteFlag) {
       const nonFlags = rest.filter((t) => !t.startsWith('-'));
@@ -176,8 +178,12 @@ function runHook() {
     if (branches.length === 0) process.exit(0); // not a delete push — allow
 
     // Open PRs of the repo being pushed to (after any `cd`/`git -C`), not
-    // this hook's own working directory; unknown targets fall back to it.
-    const repoDir = pushTargetDir(cmd) || process.cwd();
+    // this hook's own working directory, whose PRs say nothing about it.
+    const repoDir = pushTargetDir(cmd);
+    if (!repoDir) {
+      console.error('[branch-delete-guard] Could not determine which repository this delete targets (e.g. `cd "$VAR"`) — cannot check for stacked PRs depending on this branch. Allowing, but verify manually with `gh pr list --state open` in that repo first.');
+      process.exit(0);
+    }
 
     const ghAuth = tryRun('gh auth status', repoDir);
     if (!ghAuth.ok) {

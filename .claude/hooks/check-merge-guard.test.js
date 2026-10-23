@@ -252,6 +252,12 @@ test('findMergeReason', async (t) => {
     assert.equal(blocked('cd other && git checkout feature && cd .. && git merge feature', onlyOtherOnMaster), false);
   });
 
+  await t.test('an implicit push or merge in a repo that cannot be determined is blocked', () => {
+    assert.equal(blocked('cd "$REPO" && git push origin', onFeatureBranch), true);
+    assert.equal(blocked('cd "$REPO" && git merge feature', onFeatureBranch), true);
+    assert.equal(blocked('cd "$REPO" && git push origin feature', onFeatureBranch), false);
+  });
+
   await t.test('an explicit different-branch push is not swept in just because HEAD is on a protected branch', () => {
     assert.equal(blocked('git push origin some-other-branch', onMaster), false);
   });

@@ -117,6 +117,12 @@ test('hook lifecycle', async (t) => {
       assert.equal(r.status, 2);
       assert.match(r.stderr, /hardcoded credential/);
     });
+
+    await t.test('a push whose target repo cannot be determined is blocked, not audited against the hook cwd', () => {
+      const r = run('cd "$REPO" && git push origin main');
+      assert.equal(r.status, 2);
+      assert.match(r.stderr, /Could not determine which repository/);
+    });
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
     fs.rmSync(elsewhere, { recursive: true, force: true });

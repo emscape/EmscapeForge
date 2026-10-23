@@ -57,8 +57,9 @@ function isEnabled() {
 }
 
 // The branch checked out in `cwd` — the repo the command actually targets
-// (after any `cd`/`git -C`), not this hook's own working directory. An
-// unknown target (`cd "$VAR"`) falls back to the hook's directory.
+// (after any `cd`/`git -C`), not this hook's own working directory.
+// findMergeReason() never asks about an unknown (null) target: it blocks
+// instead, since the hook's own branch says nothing about the target's.
 function currentBranch(cwd) {
   try {
     return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd: cwd || undefined }).trim();
@@ -251,6 +252,9 @@ function findMergeReason(fullCmd, getCurrentBranch = currentBranch) {
       }
       const nonFlags = rest.filter((t) => !t.startsWith('-'));
       if (nonFlags.length <= 1) {
+        if (parsed[i].cwd === null && !checkedOutTo) {
+          return `implicit push (no explicit branch/refspec given) in a repository this guard can't determine (e.g. \`cd "$VAR"\`), so its current branch can't be checked — name the branch or use a literal path — matched: ${segments[i]}`;
+        }
         const branch = effectiveBranch(parsed[i].cwd);
         if (branch && PROTECTED_BRANCHES.includes(branch)) {
           return `implicit push (no explicit branch/refspec given) while on protected branch "${branch}" — matched: ${segments[i]}`;
@@ -263,6 +267,9 @@ function findMergeReason(fullCmd, getCurrentBranch = currentBranch) {
   // protected branch.
   for (let i = 0; i < normalized.length; i++) {
     if (!/^git\s+merge\b/.test(normalized[i])) continue;
+    if (parsed[i].cwd === null && !checkedOutTo) {
+      return `local \`git merge\` in a repository this guard can't determine (e.g. \`cd "$VAR"\`), so its current branch can't be checked — use a literal path`;
+    }
     const branch = effectiveBranch(parsed[i].cwd);
     if (branch && PROTECTED_BRANCHES.includes(branch)) {
       return `local \`git merge\` on protected branch "${branch}"`;

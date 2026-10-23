@@ -11,6 +11,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { extractDeletedBranches } = require('./check-branch-delete-guard.js');
@@ -161,6 +163,11 @@ test('extractDeletedBranches', async (t) => {
     assert.deepEqual(branches('echo `git push origin :branch30`'), ['branch30']);
   });
 
+  await t.test('a quoted --delete / -d flag is still a delete', () => {
+    assert.deepEqual(branches('git push origin "--delete" topic'), ['topic']);
+    assert.deepEqual(branches("git push origin '-d' topic"), ['topic']);
+  });
+
   await t.test('a delete inside a subshell is detected without the closing paren', () => {
     assert.deepEqual(branches('(cd repo && git push origin --delete branch31)'), ['branch31']);
   });
@@ -182,9 +189,20 @@ function runHookWithoutGh(command) {
 
 test('hook lifecycle', async (t) => {
   await t.test('a delete behind git -C with a quoted path reaches the PR check', () => {
-    const r = runHookWithoutGh('git -C "work tree" push origin --delete topic');
+    const workTree = fs.mkdtempSync(path.join(os.tmpdir(), 'work tree-'));
+    try {
+      const r = runHookWithoutGh(`git -C "${workTree}" push origin --delete topic`);
+      assert.equal(r.status, 0);
+      assert.match(r.stderr, /gh CLI not available/);
+    } finally {
+      fs.rmSync(workTree, { recursive: true, force: true });
+    }
+  });
+
+  await t.test('a delete whose target repo cannot be determined warns instead of checking the hook cwd', () => {
+    const r = runHookWithoutGh('cd "$REPO" && git push origin --delete topic');
     assert.equal(r.status, 0);
-    assert.match(r.stderr, /gh CLI not available/);
+    assert.match(r.stderr, /Could not determine which repository/);
   });
 
   await t.test('a delete through a quoted Windows git.exe path reaches the PR check', () => {
