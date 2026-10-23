@@ -204,32 +204,37 @@ function runHook() {
       process.stdout.write(JSON.stringify({ continue: false, stopReason: report }));
       process.exit(2);
     }
-    let diffText = run('git diff --staged', repoDir);
-    let diffSource = 'staged';
-    let changedFiles = run('git diff --staged --name-only', repoDir).trim();
-
-    if (!changedFiles && refExists('@{u}', repoDir)) {
-      // Every commit the push would send, not just the last one.
-      changedFiles = run('git diff @{u} HEAD --name-only', repoDir).trim();
-      if (changedFiles) {
-        diffText = run('git diff @{u} HEAD', repoDir);
-        diffSource = '@{u}..HEAD';
-      }
+    // Staged changes and the committed range are combined, not either/or:
+    // the commits are what the push sends, so a benign staged file must not
+    // stop them from being audited.
+    const parts = [];
+    function addDiff(label, range) {
+      const files = run(`git diff ${range} --name-only`, repoDir).trim();
+      if (files) parts.push({ label, files, text: run(`git diff ${range}`, repoDir) });
     }
 
-    if (!changedFiles) {
-      // HEAD~1 doesn't exist for a repo's root commit (first-ever push, or a
-      // force-push establishing new history) — diffing against it errors out
-      // and used to be misread as "nothing changed". Fall back to git's
-      // empty-tree object so root commits get audited for real instead of
-      // being waved through as an empty changeset.
+    addDiff('staged', '--staged');
+    const hasUpstream = refExists('@{u}', repoDir);
+    if (hasUpstream) {
+      // Every commit the push would send, not just the last one.
+      addDiff('@{u}..HEAD', '@{u} HEAD');
+    }
+    if (!hasUpstream || parts.length === 0) {
+      // No upstream to diff against (a new branch), or nothing outgoing:
+      // the last commit, as a best effort. HEAD~1 doesn't exist for a
+      // repo's root commit (first-ever push, or a force-push establishing
+      // new history) — diffing against it errors out and used to be misread
+      // as "nothing changed". Fall back to git's empty-tree object so root
+      // commits get audited for real instead of being waved through as an
+      // empty changeset.
       const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
       const hasParent = refExists('HEAD~1', repoDir);
-      const baseRef = hasParent ? 'HEAD~1' : EMPTY_TREE;
-      diffText = run(`git diff ${baseRef}`, repoDir);
-      diffSource = hasParent ? 'HEAD~1' : 'root commit (vs. empty tree)';
-      changedFiles = run(`git diff ${baseRef} --name-only`, repoDir).trim();
+      addDiff(hasParent ? 'HEAD~1..HEAD' : 'root commit (vs. empty tree)', `${hasParent ? 'HEAD~1' : EMPTY_TREE} HEAD`);
     }
+
+    const diffText = parts.map((p) => p.text).join('\n');
+    const diffSource = parts.map((p) => p.label).join(' + ');
+    const changedFiles = [...new Set(parts.flatMap((p) => p.files.split('\n')))].join('\n');
 
     if (!changedFiles) {
       const report = 'PRE-PUSH AUDIT: Changeset is empty — nothing to push.';

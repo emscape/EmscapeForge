@@ -86,8 +86,10 @@ test('secretFix', async (t) => {
 test('hook lifecycle', async (t) => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'push-audit-repo-'));
   const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'push-audit-cwd-'));
+  const remote = fs.mkdtempSync(path.join(os.tmpdir(), 'push-audit-remote-'));
   const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
   try {
+    execFileSync('git', ['init', '-q', '--bare'], { cwd: remote, stdio: 'pipe' });
     git('init', '-q');
     git('config', 'user.email', 'test@example.com');
     git('config', 'user.name', 'Test');
@@ -123,7 +125,21 @@ test('hook lifecycle', async (t) => {
       assert.equal(r.status, 2);
       assert.match(r.stderr, /Could not determine which repository/);
     });
+
+    // Last: it adds an upstream and a staged file to the shared repo.
+    await t.test('a staged file does not stop the outgoing commits from being audited', () => {
+      git('remote', 'add', 'origin', remote);
+      git('push', '-q', 'origin', 'HEAD~1:refs/heads/main');
+      git('branch', '--set-upstream-to=origin/main');
+      fs.writeFileSync(path.join(repo, 'notes.txt'), 'benign\n');
+      git('add', 'notes.txt');
+      const r = run(`git -C "${repo}" push`);
+      assert.equal(r.status, 2);
+      assert.match(r.stderr, /hardcoded credential/);
+      assert.match(r.stderr, /staged \+ @\{u\}\.\.HEAD/);
+    });
   } finally {
+    fs.rmSync(remote, { recursive: true, force: true });
     fs.rmSync(repo, { recursive: true, force: true });
     fs.rmSync(elsewhere, { recursive: true, force: true });
   }
