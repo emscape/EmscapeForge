@@ -246,6 +246,12 @@ const web3formsKey = config.contact.web3formsKey;
         text-decoration: underline;
       }
     }
+
+    // Links inside running text sit too close in colour to the faded text around them
+    // (WCAG link-in-text-block), so they keep a permanent underline
+    p a {
+      text-decoration: underline;
+    }
   }
 
   .social-links {
