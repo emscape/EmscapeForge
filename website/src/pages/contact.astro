@@ -225,7 +225,8 @@ const web3formsKey = config.contact.web3formsKey;
     p, li {
       font-size: 0.95rem;
       line-height: 1.6;
-      opacity: 0.8;
+      // Fade the text color rather than the element, so links inside keep full contrast
+      color: color-mix(in srgb, var(--color-text) 80%, transparent);
     }
 
     ol {
@@ -244,6 +245,12 @@ const web3formsKey = config.contact.web3formsKey;
       &:hover {
         text-decoration: underline;
       }
+    }
+
+    // Links inside running text sit too close in colour to the faded text around them
+    // (WCAG link-in-text-block), so they keep a permanent underline
+    p a {
+      text-decoration: underline;
     }
   }
 
