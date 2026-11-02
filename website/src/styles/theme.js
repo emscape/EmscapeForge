@@ -2,7 +2,7 @@
 export default {
   colors: {
     primary: {
-      light: '#00B5AD', // Teal
+      light: '#00817B', // Teal (4.7:1 on white, WCAG AA)
       dark: '#008B8B'    // Dark Teal
     },
     secondary: {

@@ -49,6 +49,10 @@
   // Tag styles
   --tag-bg: #f0f0f0;
   --tag-text: var(--color-text);
+
+  // Blog link colours (WCAG AA 4.5:1 on white)
+  --accent-color: #006fe7;
+  --accent-color-dark: #0056b3;
 }
 
 // Dark mode
@@ -65,6 +69,10 @@
   
   --card-bg: #1e1e1e;
   --card-border: 1px solid #333;
+
+  // Blog link colours: the light-mode blues fall below 4.5:1 on #121212/#1e1e1e
+  --accent-color: #4da3ff;
+  --accent-color-dark: #8ec5ff;
   
   --tag-bg: #2a2a2a;
   --tag-text: #f0f0f0;

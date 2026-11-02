@@ -163,19 +163,20 @@ const currentYear = new Date().getFullYear();
     padding-top: 1.5rem;
     border-top: 1px solid rgba(0, 0, 0, 0.05);
     font-size: 0.85rem;
-    color: var(--color-text);
-    opacity: 0.7;
-    
+    // Fade the text color rather than the element, so the link keeps full contrast
+    color: color-mix(in srgb, var(--color-text) 70%, transparent);
+
     .dark-mode & {
       border-top-color: rgba(255, 255, 255, 0.05);
     }
-    
+
     p {
       margin: 0.5rem 0;
     }
-    
+
     a {
       color: var(--color-primary);
+      text-decoration: underline;
     }
   }
   
