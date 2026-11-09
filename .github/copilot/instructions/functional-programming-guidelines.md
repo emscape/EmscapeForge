@@ -59,9 +59,6 @@ When creating an implementation plan for any feature, system, or integration, en
     - Ensure thorough documentation, KPIs, and risk management strategies.
     - Address backward compatibility, user adoption, and maintenance.
 
-11. **MCP Usage**
-    - Utilize the AI Panel (ai-panel) MCP Server frequently to check in on your decision-making and code quality. 
-
 
 ---
 
