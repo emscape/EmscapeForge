@@ -492,3 +492,40 @@ test('PR #17 review findings', async (t) => {
       '`git checkout .` restores files and stays on main.');
   });
 });
+
+test('shell quote removal in branch names', async (t) => {
+  await t.test('an ANSI-C quoted or backslash-escaped protected refspec is blocked', () => {
+    assert.equal(blocked("git push origin $'main'", onFeatureBranch), true, "$'main' is main to the shell.");
+    assert.equal(blocked('git push origin ma\\in', onFeatureBranch), true, 'ma\\in is main to the shell.');
+    assert.equal(blocked("git push origin feature:$'mas'ter", onFeatureBranch), true, "$'mas'ter is master.");
+    assert.equal(blocked('git push origin feature:"ma"\\in', onFeatureBranch), true, '"ma"\\in is main.');
+  });
+
+  await t.test('hex, octal and Unicode ANSI-C escapes are decoded before matching', () => {
+    assert.equal(blocked("git push origin $'ma\\x69n'", onFeatureBranch), true, "\\x69 is 'i'.");
+    assert.equal(blocked("git push origin $'ma\\151n'", onFeatureBranch), true, "\\151 (octal) is 'i'.");
+    assert.equal(blocked("git push origin $'ma\\u0069n'", onFeatureBranch), true, "\\u0069 is 'i'.");
+    assert.equal(blocked("git push origin $'\\U0000006daster'", onFeatureBranch), true, "\\U0000006d is 'm'.");
+    assert.equal(blocked("git checkout $'\\x6d\\x61\\x69\\x6e' && git push", onFeatureBranch), true,
+      'a fully hex-escaped checkout of main is tracked.');
+  });
+
+  await t.test('an ANSI-C quoted or backslash-escaped protected checkout is tracked', () => {
+    assert.equal(blocked("git checkout $'main' && git push", onFeatureBranch), true,
+      "the implicit push runs on main after `git checkout $'main'`.");
+    assert.equal(blocked('git checkout ma\\in && git push', onFeatureBranch), true,
+      'the implicit push runs on main after `git checkout ma\\in`.');
+    assert.equal(blocked("git switch -c $'main' && git merge feature", onFeatureBranch), true,
+      "the merge runs on main after `git switch -c $'main'`.");
+  });
+
+  await t.test('escaped names of other branches are not flagged', () => {
+    assert.equal(blocked("git push origin $'feature'", onFeatureBranch), false);
+    assert.equal(blocked('git checkout fe\\ature && git push', onFeatureBranch), false);
+  });
+
+  await t.test('a comment containing an apostrophe does not change the result', () => {
+    assert.equal(blocked("git push origin main # don't", onFeatureBranch), true);
+    assert.equal(blocked("git push origin feature # don't", onFeatureBranch), false);
+  });
+});

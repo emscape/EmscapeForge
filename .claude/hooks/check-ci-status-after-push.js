@@ -45,11 +45,14 @@ function run(file, args, cwd) {
   }
 }
 
-function tryRun(file, args, cwd) {
+// With timeoutMs, the child is killed once the deadline passes and the
+// result is marked timedOut.
+function tryRun(file, args, cwd, { timeoutMs } = {}) {
+  const opts = { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd, ...(timeoutMs ? { timeout: timeoutMs } : {}) };
   try {
-    return { ok: true, out: execFileSync(file, args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd }) };
+    return { ok: true, out: execFileSync(file, args, opts), timedOut: false };
   } catch (e) {
-    return { ok: false, out: e.stdout || '', err: e.stderr || String(e) };
+    return { ok: false, out: e.stdout || '', err: e.stderr || String(e), timedOut: e.code === 'ETIMEDOUT' };
   }
 }
 
@@ -101,7 +104,7 @@ function pushedRef(segment, gitConfig = () => '') {
   return { src, dest: dest.replace(/^refs\/heads\//, '') };
 }
 
-module.exports = { shouldVerify, pushedRef };
+module.exports = { shouldVerify, pushedRef, tryRun };
 
 // Only run the stdin-driven hook lifecycle when executed directly (how
 // Claude Code invokes it) — not when require()'d from the test file.
@@ -180,8 +183,7 @@ function verifyPush(push, config) {
 
   const newRunTimeoutMs = (config.new_run_timeout_seconds ?? 60) * 1000;
   const pollIntervalMs = (config.poll_interval_seconds ?? 5) * 1000;
-  // completion_timeout_seconds (config.json) is intentionally unenforced —
-  // see the comment above the gh run watch call below for why.
+  const completionTimeoutMs = (config.completion_timeout_seconds ?? 180) * 1000;
 
   console.error(`[ci-status-check] Waiting for GitHub Actions run on ${branch}@${sha.slice(0, 7)}...`);
 
@@ -214,15 +216,19 @@ function verifyPush(push, config) {
 
   // Phase 2: `gh run watch` does its own polling internally and exits
   // non-zero on a failed conclusion with --exit-status — no need to
-  // hand-roll a second poll loop. It blocks until the run actually
-  // completes with no timeout flag of its own; execSync can't interrupt a
-  // blocking child process on a wall-clock deadline without spawning it
-  // separately and killing it, which isn't worth the complexity here —
-  // GitHub Actions jobs already have their own multi-hour cap, so this
-  // will always return eventually. completion_timeout_seconds (config.json)
-  // is currently unused anywhere in this file as a result — documented
-  // there for a future implementer, not silently deleted.
-  const watchResult = tryRun('gh', ['run', 'watch', String(matchedRun.databaseId), '--exit-status'], repoDir);
+  // hand-roll a second poll loop. It has no timeout flag of its own, so a
+  // queued or stuck run would block the session indefinitely; the child is
+  // killed at completion_timeout_seconds instead.
+  const watchResult = tryRun('gh', ['run', 'watch', String(matchedRun.databaseId), '--exit-status'], repoDir, {
+    timeoutMs: completionTimeoutMs,
+  });
+
+  if (watchResult.timedOut) {
+    console.error(
+      `[ci-status-check] ⏱ CI run ${matchedRun.databaseId} for ${sha.slice(0, 7)} did not finish within ${completionTimeoutMs / 1000}s. Its result is unknown — check \`gh run view ${matchedRun.databaseId}\` before reporting success to the user.`
+    );
+    return 1;
+  }
 
   if (watchResult.ok) {
     console.error(`[ci-status-check] ✅ CI PASSED for ${sha.slice(0, 7)} (run ${matchedRun.databaseId}).`);

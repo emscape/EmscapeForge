@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 /**
- * check-arch-boundary.js
+ * check-arch-boundary.mjs
  * Hook type : PreToolUse — Write | Edit | MultiEdit
  * Purpose   : Enforce package boundary rules defined in config.json.
  *             Exits 2 (block) on violation so Claude Code sees the message
  *             and self-corrects. Exits 0 (allow) when all checks pass.
  *
  * Inputs (via stdin JSON):
- *   { tool_name, tool_input: { file_path, content } }
+ *   { tool_name, tool_input: { file_path, content } }                (Write)
+ *   { tool_name, tool_input: { file_path, old_string, new_string } } (Edit)
+ *   { tool_name, tool_input: { file_path, edits: [...] } }           (MultiEdit)
  *
  * Config used:
  *   .claude/hooks/config.json → arch_rules.enabled, arch_rules.rules[]
  */
 
+import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -31,6 +34,31 @@ function block(violations) {
   violations.forEach(v => process.stderr.write(`   • ${v}\n`));
   process.stderr.write('\n');
   process.exit(2);
+}
+
+// Write sends the whole file as `content`. Edit and MultiEdit send only
+// replacement fields, and this hook runs before the edit lands, so the
+// edits are applied to the current file to get what it will become. A
+// new_string whose old_string isn't found is appended, so text being added
+// is never left unchecked.
+function contentAfterEdit(input) {
+  if (typeof input.content === 'string') return input.content;
+  const edits = Array.isArray(input.edits) ? input.edits : [input];
+  let text = '';
+  try {
+    text = readFileSync(input.file_path, 'utf8');
+  } catch {
+    // New or unreadable file: only the added text can be checked.
+  }
+  const unmatched = [];
+  for (const { old_string: from = '', new_string: to = '', replace_all } of edits) {
+    if (from && text.includes(from)) {
+      text = replace_all ? text.split(from).join(to) : text.replace(from, () => to);
+    } else if (to) {
+      unmatched.push(to);
+    }
+  }
+  return [text, ...unmatched].join('\n');
 }
 
 function escapeRegex(str) {
@@ -70,9 +98,8 @@ process.stdin.on('end', () => {
   }
 
   const filePath = (payload?.tool_input?.file_path ?? '').replace(/\\/g, '/');
-  const content  = payload?.tool_input?.content ?? '';
-
   if (!filePath) process.exit(0);
+  const content = contentAfterEdit(payload.tool_input);
 
   // ── Run rules ───────────────────────────────────────────────────────────
   process.stderr.write(`[arch-boundary] Checking: ${filePath}\n`);

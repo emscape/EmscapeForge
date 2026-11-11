@@ -21,7 +21,9 @@ process.stdin.on('end', () => {
   }
 
   const filePath = input?.tool_input?.file_path || '';
-  const basename = path.basename(filePath);
+  // Lowercased: on case-insensitive file systems (Windows, macOS default)
+  // `.ENV` opens the same file as `.env`.
+  const basename = path.basename(filePath).toLowerCase();
 
   if (basename === '.env' || basename.startsWith('.env.')) {
     const msg = JSON.stringify({

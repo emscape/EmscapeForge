@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * check-empty-tests.js
+ * check-empty-tests.mjs
  * Hook type : PostToolUse — Write | Edit | MultiEdit
  * Purpose   : Detect theater testing — empty describe/it blocks that pass
  *             without asserting anything. Fails loudly when found.
@@ -16,6 +16,7 @@
  *                               empty_test_guard.block_todo_tests
  */
 
+import { readFileSync } from 'fs';
 import { resolve, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -72,19 +73,34 @@ process.stdin.on('end', () => {
   }
 
   const filePath = (payload?.tool_input?.file_path ?? '').replace(/\\/g, '/');
-  const content  = payload?.tool_input?.content ?? '';
+  if (!filePath || !isTestFile(basename(filePath))) process.exit(0);
 
-  if (!filePath || !content) process.exit(0);
-  if (!isTestFile(basename(filePath))) process.exit(0);
+  // Write sends the whole file as `content`; Edit and MultiEdit send only
+  // replacement fields, so read the file as it stands after the edit.
+  let content = payload?.tool_input?.content ?? '';
+  if (!content) {
+    try {
+      content = readFileSync(filePath, 'utf8');
+    } catch {
+      process.exit(0);
+    }
+  }
+  if (!content) process.exit(0);
 
   log(`Checking test file: ${filePath}`);
 
   const violations = [];
 
+  // The callback sits inside the call's parentheses after a quoted title:
+  // describe('title', () => {}), it("title", async () => { }), test(`t`, function () {})
+  const EMPTY_CALLBACK =
+    String.raw`\s*\(\s*(['"` + '`' + String.raw`])(?:\\.|(?!\1)[^\\])*\1\s*,\s*` +
+    String.raw`(?:(?:async\s*)?\(\s*\)\s*=>|(?:async\s+)?function\s*\(\s*\))\s*\{\s*\}`;
+
   // ── Check for empty describe blocks: describe('...', () => {}) ──────────
   if (block_empty_describe) {
     // Matches describe/suite blocks with an empty or whitespace-only body
-    const emptyDescribe = /\b(?:describe|suite)\s*\([^)]*\)\s*,\s*\(\s*\)\s*=>\s*\{\s*\}/g;
+    const emptyDescribe = new RegExp(String.raw`\b(?:describe|suite)` + EMPTY_CALLBACK, 'g');
     const matches = content.match(emptyDescribe);
     if (matches) {
       violations.push(`Empty describe/suite block (${matches.length} found) — add tests or remove the block`);
@@ -93,7 +109,7 @@ process.stdin.on('end', () => {
 
   // ── Check for empty it/test blocks: it('...', () => {}) ─────────────────
   if (block_empty_it) {
-    const emptyIt = /\b(?:it|test)\s*\([^)]*\)\s*,\s*(?:async\s*)?\(\s*\)\s*=>\s*\{\s*\}/g;
+    const emptyIt = new RegExp(String.raw`\b(?:it|test)` + EMPTY_CALLBACK, 'g');
     const matches = content.match(emptyIt);
     if (matches) {
       violations.push(`Empty it/test block (${matches.length} found) — add assertions or delete the test`);
@@ -110,8 +126,10 @@ process.stdin.on('end', () => {
   }
 
   // ── Check for describe with no assertions anywhere inside ────────────────
-  // Heuristic: test file with zero expect/assert calls is theater
-  const hasAssertions = /\b(?:expect|assert)\s*\(/.test(content);
+  // Heuristic: test file with zero expect/assert calls is theater. Method
+  // forms count too: assert.equal(...), assert.strict.deepEqual(...),
+  // expect.assertions(...).
+  const hasAssertions = /\b(?:expect|assert)(?:\.\w+)*\s*\(/.test(content);
   const hasTestBlocks = /\b(?:it|test)\s*\(/.test(content);
   if (hasTestBlocks && !hasAssertions) {
     violations.push('Test file contains test blocks but NO expect/assert calls — this is a theater test file');

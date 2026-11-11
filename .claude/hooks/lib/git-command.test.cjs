@@ -277,6 +277,34 @@ test('pushArgs', async (t) => {
     assert.deepEqual(pushArgs('git push "/tmp/remote repo" feature'), { remote: '/tmp/remote repo', refspecs: ['feature'], sets: [], deletes: false });
     assert.deepEqual(pushArgs("git push --repo '/tmp/a b' feat\"ure\""), { remote: '/tmp/a b', refspecs: ['feature'], sets: [], deletes: false });
   });
+
+  await t.test('ANSI-C quotes and backslash escapes are removed as the shell does', () => {
+    assert.deepEqual(pushArgs("git push origin $'main'").refspecs, ['main']);
+    assert.deepEqual(pushArgs('git push origin ma\\in').refspecs, ['main']);
+    assert.deepEqual(pushArgs('git push my\\ remote fe\\ature:"ma"in'), { remote: 'my remote', refspecs: ['feature:main'], sets: [], deletes: false });
+    assert.deepEqual(pushArgs('git push "a \\"b\\"" feature'), { remote: 'a "b"', refspecs: ['feature'], sets: [], deletes: false });
+  });
+
+  await t.test('ANSI-C numeric escapes are decoded as bash does', () => {
+    assert.deepEqual(pushArgs("git push origin $'ma\\x69n'").refspecs, ['main']);
+    assert.deepEqual(pushArgs("git push origin $'\\x6Dai\\x6e'").refspecs, ['main'], 'hex digits in either case');
+    assert.deepEqual(pushArgs("git push origin $'ma\\151n'").refspecs, ['main'], 'octal');
+    assert.deepEqual(pushArgs("git push origin $'ma\\u0069n'").refspecs, ['main'], '\\u, four hex digits');
+    assert.deepEqual(pushArgs("git push origin $'ma\\U00000069n'").refspecs, ['main'], '\\U, eight hex digits');
+    assert.deepEqual(pushArgs("git push origin $'a\\x7'").refspecs, ['a\x07'], 'fewer digits than the maximum');
+    assert.deepEqual(pushArgs("git push origin $'a\\xzz'").refspecs, ['a\\xzz'], 'no hex digit: left as written');
+  });
+
+  await t.test('an unquoted Windows path keeps its backslashes', () => {
+    assert.equal(pushArgs('git push C:\\repos\\backup feature').remote, 'C:\\repos\\backup');
+    assert.equal(pushArgs('git push ..\\backup feature').remote, '..\\backup');
+  });
+
+  await t.test('a comment and redirections are not arguments', () => {
+    assert.deepEqual(pushArgs("git push origin main # don't forget").refspecs, ['main']);
+    assert.deepEqual(pushArgs('git push origin main >/dev/null 2> err.log').refspecs, ['main']);
+    assert.deepEqual(pushArgs('git push origin ">" main').refspecs, ['>', 'main']);
+  });
 });
 
 test('splitRefspec', () => {

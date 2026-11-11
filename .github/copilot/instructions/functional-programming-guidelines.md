@@ -12,7 +12,7 @@ If the best approach is unclear or you are unsure, ask Emily before proceeding.
 For all code implementation, follow the functional programming practices outlined in [functional-programming-guidelines.md](./functional-programming-guidelines.md). These guidelines ensure code quality, maintainability, and consistency across all AI-generated implementations.
 
 ### TDD/BDD and DRY Programming Guidelines
-**MANDATORY**: Follow the Test-Driven Development and DRY principles outlined in [tdd-bdd-dry-guidelines.md](./tdd-bdd-dry-guidelines.md). Tests MUST be written BEFORE implementation code. Tests are documentation and should NOT be changed to fit implementation - implementation code must be adjusted to make assertions true.
+**MANDATORY**: Follow the Test-Driven Development and DRY principles outlined in the [tdd-cycle skill](../skills/tdd-cycle/SKILL.md). Tests MUST be written BEFORE implementation code. Tests are documentation and should NOT be changed to fit implementation - implementation code must be adjusted to make assertions true.
 
 ## Implementation Planning Framework
 When creating an implementation plan for any feature, system, or integration, ensure the plan covers the following 10 key areas for robustness and enterprise readiness:

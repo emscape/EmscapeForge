@@ -40,7 +40,7 @@
 
 const { execSync } = require('child_process');
 const { loadHookConfig } = require('./lib/hook-config.cjs');
-const { commandSegments, pushArgs, splitRefspec, stripSurroundingQuotes } = require('./lib/git-command.cjs');
+const { commandSegments, pushArgs, shellWords, splitRefspec } = require('./lib/git-command.cjs');
 
 const PROTECTED_BRANCHES = ['master', 'main'];
 
@@ -80,25 +80,20 @@ function currentBranch(cwd) {
 // premise for exactly the case (force-creating/resetting the protected
 // branch itself) that matters most.
 function checkoutTarget(segment) {
-  const m = segment.match(/^git\s+(?:checkout|switch)\s+(.*)$/);
-  if (!m) return null;
+  if (!/^git\s+(?:checkout|switch)\s/.test(segment)) return null;
 
-  const tokens = m[1].split(/\s+/).filter(Boolean);
+  // This hook sees the raw command string, quotes and all. shellWords()
+  // removes quotes and escapes as the shell does — a quoted or escaped
+  // branch name (`git switch "main"`, `git checkout $'main'`, `ma\in`)
+  // otherwise never matches PROTECTED_BRANCHES and bypasses the
+  // implicit-push/local-merge checks for the rest of the chain.
+  const tokens = shellWords(segment).slice(2);
   const createFlagIdx = tokens.findIndex((t) => t === '-b' || t === '-B' || t === '-c' || t === '-C');
-  if (createFlagIdx !== -1) {
-    const raw = tokens[createFlagIdx + 1];
-    // This hook sees the raw command string, quotes and all — a quoted
-    // branch name (`git switch "main"`) otherwise yields a checkout
-    // target of `"main"`, which never matches PROTECTED_BRANCHES and
-    // bypasses the implicit-push/local-merge checks for the rest of the
-    // chain.
-    return raw ? stripSurroundingQuotes(raw) : null;
-  }
+  if (createFlagIdx !== -1) return tokens[createFlagIdx + 1] || null;
   // `git checkout [<branch>] -- <paths>` and `git checkout .` restore files
   // and leave HEAD where it was, so they aren't a move to another branch.
   if (tokens.includes('--')) return null;
-  const raw = tokens.find((t) => !t.startsWith('-'));
-  const target = raw ? stripSurroundingQuotes(raw) : null;
+  const target = tokens.find((t) => !t.startsWith('-')) || null;
   return target === '.' ? null : target;
 }
 

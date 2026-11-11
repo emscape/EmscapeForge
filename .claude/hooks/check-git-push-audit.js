@@ -29,6 +29,7 @@
 
 const { execSync, execFileSync } = require('child_process');
 const { isGitPush, pushArgs, pushSegments, splitRefspec } = require('./lib/git-command.cjs');
+const { loadHookConfig } = require('./lib/hook-config.cjs');
 
 // ── Secret patterns ────────────────────────────────────────────────────────────
 // Generic (non-vendor-specific) patterns keep a low length floor (8 chars
@@ -267,6 +268,16 @@ function runHook() {
       process.exit(0); // not a push — allow
     }
 
+    // An unreadable shared config keeps the audit on: failing open here
+    // would skip the secret scan.
+    let enabled = true;
+    try {
+      enabled = loadHookConfig({ hooksDir: __dirname }).push_audit?.enabled !== false;
+    } catch {
+      // keep auditing
+    }
+    if (!enabled) process.exit(0);
+
     // ── Gather diff ─────────────────────────────────────────────────────────────
     // From the repo being pushed, not this hook's own working directory —
     // `cd ../other && git push` or `git -C ../other push` from a session
@@ -302,9 +313,39 @@ function runHook() {
     }
     // Labels name the repository only when the command pushes more than one.
     const labelIn = (label, repoDir) => (repoDirs.length > 1 ? `${label} in ${repoDir}` : label);
+    // `git diff` can exit 0 with a blob it needs missing from the object
+    // store (seen with git 2.56 on Linux, where 2.51 on Windows fails), so
+    // the exit code alone can't prove the patch is complete. Every blob the
+    // diff reads is checked first. Submodule entries (mode 160000) name
+    // commits in another repository, so they are skipped.
+    function blobsMissing(range, repoDir) {
+      const raw = readGit(['diff', ...range, '--raw', '--no-abbrev'], 'the changed objects', repoDir);
+      const oids = [];
+      for (const line of raw.split('\n')) {
+        const m = line.match(/^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) /);
+        if (!m) continue;
+        if (m[1] !== '160000' && !/^0+$/.test(m[3])) oids.push(m[3]);
+        if (m[2] !== '160000' && !/^0+$/.test(m[4])) oids.push(m[4]);
+      }
+      if (!oids.length) return false;
+      try {
+        const out = execFileSync('git', ['cat-file', '--batch-check'], { cwd: repoDir, input: oids.join('\n') + '\n', encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+        return / missing$/m.test(out);
+      } catch {
+        return true;
+      }
+    }
     function addDiff(label, range, repoDir) {
-      const files = readGit(['diff', ...range, '--name-only'], `the ${label} changes`, repoDir).trim();
-      if (files) parts.push({ label: labelIn(label, repoDir), files, text: readGit(['diff', ...range], `the ${label} changes`, repoDir) });
+      const what = `the ${label} changes`;
+      const files = readGit(['diff', ...range, '--name-only'], what, repoDir).trim();
+      if (!files) return;
+      if (blobsMissing(range, repoDir)) {
+        const report = `PRE-PUSH AUDIT: Could not read ${what} (an object \`git diff ${range.join(' ')}\` needs is missing in ${repoDir}), so they cannot be audited.`;
+        process.stderr.write(report + '\n');
+        process.stdout.write(JSON.stringify({ continue: false, stopReason: report }));
+        process.exit(2);
+      }
+      parts.push({ label: labelIn(label, repoDir), files, text: readGit(['diff', ...range], what, repoDir) });
     }
 
     for (const repoDir of repoDirs) addDiff('staged', ['--staged'], repoDir);

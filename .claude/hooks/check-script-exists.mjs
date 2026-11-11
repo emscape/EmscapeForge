@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * check-script-exists.js
+ * check-script-exists.mjs
  * Hook type : PreToolUse — Bash
  * Purpose   : Two checks combined:
  *
@@ -84,7 +84,9 @@ function isNoOp(command) {
 }
 
 // ── Extract script name from run commands ─────────────────────────────────
-// Matches: npm run X, pnpm run X, yarn run X, npx X, pnpm X (shorthand)
+// Matches: npm run X, pnpm run X, yarn run X. Not `npx X` (runs a package
+// binary, not a script) or `pnpm X` / `yarn X` shorthand (falls back to a
+// binary when no script has that name), since neither has to be a script.
 function extractScriptName(command) {
   const runMatch = command.match(/\b(?:npm|pnpm|yarn)\s+run\s+([^\s;&|]+)/);
   if (runMatch) return runMatch[1];

@@ -293,7 +293,7 @@ RESOLUTION: Contract authoritative → HALT and escalate
 1. **Run tests** to verify GREEN (all passing)
 2. **Verify traceability matrix** complete
 3. **Verify side effect audit** clean
-4. **Commit with WHY/EXPECTED format**:
+4. **Commit with WHY/EXPECTED format** — show the user the exact message first and commit only after they approve it:
    ```
    WHY: POST-1 requires get_session() to return SessionContext after bind
    EXPECTED: Tests pass, implementation satisfies PRE/POST/INV/ERRORS

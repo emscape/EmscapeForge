@@ -97,6 +97,33 @@ function ansiCQuoteEnd(str, i) {
 // as written, which can only make a word harder to recognise, not easier.
 const ANSI_C_ESCAPES = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?' };
 
+// Numeric ANSI-C escapes, as bash reads them: `\xHH` (1-2 hex digits),
+// `\nnn` (1-3 octal), `\uHHHH` (1-4 hex) and `\UHHHHHHHH` (1-8 hex).
+const ANSI_C_NUMERIC = [
+  { re: /^x([0-9a-fA-F]{1,2})/, base: 16 },
+  { re: /^([0-7]{1,3})/, base: 8 },
+  { re: /^u([0-9a-fA-F]{1,4})/, base: 16 },
+  { re: /^U([0-9a-fA-F]{1,8})/, base: 16 },
+];
+
+// The ANSI-C escape after the backslash at `str[i - 1]`: `{ text, end }`,
+// `end` being the index just past it. An escape bash doesn't decode
+// (`\xzz`, `\q`) is kept as written, backslash included.
+function ansiCEscape(str, i) {
+  const ch = str[i];
+  if (ch in ANSI_C_ESCAPES) return { text: ANSI_C_ESCAPES[ch], end: i + 1 };
+  const rest = str.slice(i, i + 9);
+  for (const { re, base } of ANSI_C_NUMERIC) {
+    const m = rest.match(re);
+    if (!m) continue;
+    const code = parseInt(m[1], base);
+    // Above U+10FFFF there's no character; kept as written, like bash.
+    if (code > 0x10ffff) break;
+    return { text: String.fromCodePoint(base === 8 ? code & 0xff : code), end: i + m[0].length };
+  }
+  return { text: `\\${ch}`, end: i + 1 };
+}
+
 // Index just past a quoted string, an escaped character, or a command
 // substitution opening at `i` — text that goes into a segment whole and is
 // never split — or -1 if `i` opens none of those. Single quotes are fully
@@ -217,9 +244,19 @@ function unwrapShellDashC(segment) {
 // copied through unchanged, to be parsed later. Null if a quote is
 // unterminated.
 function unquotedWords(str) {
+  const tokens = shellTokens(str);
+  return tokens && tokens.map((t) => t.value);
+}
+
+// unquotedWords() as `{ raw, value }` pairs, `raw` being the word as
+// written. With `stopAtComment`, an unquoted `#` starting a word ends the
+// words, as it does for the shell, so a quote inside the comment can't
+// leave one unterminated.
+function shellTokens(str, { stopAtComment = false } = {}) {
   const words = [];
   let current = '';
   let inWord = false;
+  let start = 0;
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
     if (ch === '\\' && str[i + 1] === '\n') {
@@ -227,10 +264,14 @@ function unquotedWords(str) {
       continue;
     }
     if (/\s/.test(ch)) {
-      if (inWord) words.push(current);
+      if (inWord) words.push({ raw: str.slice(start, i), value: current });
       current = '';
       inWord = false;
       continue;
+    }
+    if (!inWord) {
+      if (stopAtComment && ch === '#') return words;
+      start = i;
     }
     inWord = true;
     if (ch === '\\') {
@@ -239,8 +280,9 @@ function unquotedWords(str) {
       let j = i + 2;
       for (; j < str.length && str[j] !== "'"; j++) {
         if (str[j] === '\\' && j + 1 < str.length) {
-          const esc = str[++j];
-          current += esc in ANSI_C_ESCAPES ? ANSI_C_ESCAPES[esc] : `\\${esc}`;
+          const { text, end } = ansiCEscape(str, j + 1);
+          current += text;
+          j = end - 1;
         } else {
           current += str[j];
         }
@@ -277,7 +319,7 @@ function unquotedWords(str) {
       current += ch;
     }
   }
-  if (inWord) words.push(current);
+  if (inWord) words.push({ raw: str.slice(start), value: current });
   return words;
 }
 
@@ -633,25 +675,39 @@ function stripSurroundingQuotes(token) {
 // the `&`, leaving `2>` at the end of the segment.
 const REDIRECTION = /^\d*(?:&>>?|>>?&?|>\||<&?)/;
 
-// A segment's shell words with their quotes removed: `"/tmp/remote repo"`
-// is one word, and `feat"ure"` is `feature`. Backslash escapes and
-// expansions are left as written. A `#` comment ends the words, and
-// redirections (and a detached target, as in `> out.log`) are dropped, so
-// neither is mistaken for an argument.
+// A segment's shell words after quote removal, as unquotedWords() does it:
+// `"/tmp/remote repo"` is one word, and `feat"ure"`, `$'feature'` and
+// `fe\ature` are all `feature`, so a guard comparing branch names sees what
+// the shell will pass to git. An unquoted Windows path (`C:\repos\x`) keeps
+// its backslashes, as in normalizeSegment(). Expansions are left as
+// written. A `#` comment ends the words, and redirections (and a detached
+// target, as in `> out.log`) are dropped, so neither is mistaken for an
+// argument.
 function shellWords(segment) {
-  const raw = segment.match(new RegExp(WORD, 'g')) || [];
+  const tokens = shellTokens(segment, { stopAtComment: true }) ?? looseShellTokens(segment);
   const words = [];
-  for (let i = 0; i < raw.length; i++) {
-    const word = raw[i];
-    if (word.startsWith('#')) break;
-    const redirect = word.match(REDIRECTION);
+  for (let i = 0; i < tokens.length; i++) {
+    const { raw, value } = tokens[i];
+    const redirect = raw.match(REDIRECTION);
     if (redirect) {
-      if (redirect[0] === word) i++;
+      if (redirect[0] === raw) i++;
       continue;
     }
-    words.push(word.replace(/"([^"]*)"|'([^']*)'/g, (_, dq, sq) => dq ?? sq));
+    words.push(UNQUOTED_WINDOWS_PATH.test(raw) ? raw : value);
   }
   return words;
+}
+
+// shellTokens() for a segment with an unterminated quote, which the shell
+// would reject before running anything: split on whitespace outside
+// matched quotes, removing only those quotes.
+function looseShellTokens(segment) {
+  const tokens = [];
+  for (const raw of segment.match(new RegExp(WORD, 'g')) || []) {
+    if (raw.startsWith('#')) break;
+    tokens.push({ raw, value: raw.replace(/"([^"]*)"|'([^']*)'/g, (_, dq, sq) => dq ?? sq) });
+  }
+  return tokens;
 }
 
 // `git push` options whose value is the next word, so it isn't mistaken
@@ -709,6 +765,7 @@ module.exports = {
   pushArgs,
   pushSegments,
   segmentsOf,
+  shellWords,
   splitRefspec,
   stripLeadingEnvPrefix,
   stripSurroundingQuotes,

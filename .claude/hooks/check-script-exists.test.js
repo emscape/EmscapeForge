@@ -1,5 +1,5 @@
 // check-script-exists.test.js
-// Lifecycle tests for check-script-exists.js — run with
+// Lifecycle tests for check-script-exists.mjs — run with
 // `node --test *.test.js *.test.cjs lib/*.test.cjs` from the hooks directory.
 //
 // The hook runs on stdin JSON as Claude Code invokes it, from a working
@@ -25,7 +25,7 @@ test('hook lifecycle', async (t) => {
       path.join(projectDir, '.claude', 'hooks.config.json'),
       JSON.stringify({ script_guard: { enabled: true, ...scriptGuard } })
     );
-    const r = spawnSync(process.execPath, [path.join(__dirname, 'check-script-exists.js')], {
+    const r = spawnSync(process.execPath, [path.join(__dirname, 'check-script-exists.mjs')], {
       input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }),
       cwd: elsewhere,
       env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },

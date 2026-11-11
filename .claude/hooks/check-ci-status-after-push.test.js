@@ -13,7 +13,30 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { shouldVerify, pushedRef } = require('./check-ci-status-after-push.js');
+const { shouldVerify, pushedRef, tryRun } = require('./check-ci-status-after-push.js');
+
+test('tryRun', async (t) => {
+  await t.test('returns stdout from a program run without a shell', () => {
+    const r = tryRun(process.execPath, ['-e', 'process.stdout.write(process.argv[1])', 'a;echo b']);
+    assert.equal(r.ok, true);
+    assert.equal(r.out, 'a;echo b');
+    assert.equal(r.timedOut, false);
+  });
+
+  await t.test('reports a non-zero exit as not ok and not timed out', () => {
+    const r = tryRun(process.execPath, ['-e', 'process.exit(3)']);
+    assert.equal(r.ok, false);
+    assert.equal(r.timedOut, false);
+  });
+
+  await t.test('kills a child that outlives timeoutMs and reports it as timed out', () => {
+    const started = Date.now();
+    const r = tryRun(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], undefined, { timeoutMs: 300 });
+    assert.equal(r.ok, false);
+    assert.equal(r.timedOut, true);
+    assert.ok(Date.now() - started < 10000, 'child was not killed at the deadline');
+  });
+});
 
 test('shouldVerify', async (t) => {
   await t.test('plain git push', () => {

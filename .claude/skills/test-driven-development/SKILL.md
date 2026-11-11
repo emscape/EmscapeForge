@@ -42,6 +42,7 @@ Skills provide **operational procedures** that execute these constitutional prin
    - Format: `[AGENT_ID] Brief description\n\nWHY:\n- Rationale\n\nEXPECTED:\n- Outcome\n\nRefs: #issue`
    - Example: "WHY: Audit 2252 requires age validation. EXPECTED: Rejects ages <0 or >150"
    - Commit BEFORE refactoring
+   - Show the user the exact message and commit only after they approve it — every commit needs its own approval
 
 **Evidence Required**: Git commit hash, commit message follows format
 
@@ -131,7 +132,7 @@ Use **sub-agents** for test writing and implementation (not direct writes):
      - [ ] Independent review findings addressed
    - **Evidence Required**: Reviewer findings and how each was resolved
 
-5. **Commit with verbose message** (WHY and EXPECTED format per commit standards)
+5. **Commit with verbose message** (WHY and EXPECTED format per commit standards), after the user approves the exact message
 6. **Refactor while green** (REFACTOR)
 7. **Independent review** (MANDATORY per CL5); apply all suggestions
 
