@@ -58,7 +58,7 @@
     "new_run_timeout_seconds": 60,
     "_new_run_timeout_note": "How long to wait for a run matching the just-pushed commit SHA to even appear in `gh run list`.",
     "completion_timeout_seconds": 180,
-    "_completion_timeout_note": "Currently unenforced — check-ci-status-after-push.js uses `gh run watch` for this phase, which blocks until the run finishes with no timeout flag of its own. Left here as a documented intent for a future implementer, not a working setting."
+    "_completion_timeout_note": "How long `gh run watch` may wait for the matched run to finish before it is killed and the hook reports the result as unknown (exit 1)."
   },
 
   "merge_guard": {
@@ -121,14 +121,14 @@
     "package_json_paths": ["package.json"],
     "_package_json_paths_note": "List of package.json files to check for script existence. Extend for monorepos.",
     "on_missing": "warn",
-    "_on_missing_note": "'warn' prints to stderr (exit 0) | 'block' exits 1 and prevents the command"
+    "_on_missing_note": "'warn' prints to stderr (exit 0) | 'block' exits 2 and prevents the command"
   },
 
   "commit_guard": {
-    "enabled": false,
+    "enabled": true,
     "_comment": "Warn or block git commit commands that do not include WHY and EXPECTED sections in the message.",
     "required_markers": ["WHY:", "EXPECTED:"],
-    "on_violation": "warn",
+    "on_violation": "block",
     "_on_violation_note": "warn prints to stderr (exit 0) | block exits 2 and rejects the tool call"
   },
 

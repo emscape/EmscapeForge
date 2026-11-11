@@ -4,7 +4,7 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/check-arch-boundary.js" }
+          { "type": "command", "command": "node .claude/hooks/check-arch-boundary.mjs" }
         ]
       },
       {
@@ -12,7 +12,7 @@
         "hooks": [
           { "type": "command", "command": "node .claude/hooks/check-bash-description.js" },
           { "type": "command", "command": "node .claude/hooks/check-dep-guard.js" },
-          { "type": "command", "command": "node .claude/hooks/check-script-exists.js" },
+          { "type": "command", "command": "node .claude/hooks/check-script-exists.mjs" },
           { "type": "command", "command": "node .claude/hooks/check-commit-message.js" },
           { "type": "command", "command": "node .claude/hooks/check-merge-guard.js" },
           { "type": "command", "command": "node .claude/hooks/check-git-push-audit.js" },
@@ -31,9 +31,9 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/validate-content.js" },
-          { "type": "command", "command": "node .claude/hooks/check-empty-tests.js" },
-          { "type": "command", "command": "node .claude/hooks/check-todo-format.js" }
+          { "type": "command", "command": "node .claude/hooks/validate-content.mjs" },
+          { "type": "command", "command": "node .claude/hooks/check-empty-tests.mjs" },
+          { "type": "command", "command": "node .claude/hooks/check-todo-format.mjs" }
         ]
       },
       {

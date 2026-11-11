@@ -126,6 +126,61 @@ test('hook lifecycle', async (t) => {
       assert.match(r.stderr, /Could not determine which repository/);
     });
 
+    await t.test('every push in a chain is audited, not just the first', () => {
+      const clean = fs.mkdtempSync(path.join(os.tmpdir(), 'push-audit-clean-'));
+      try {
+        const cleanGit = (...args) => execFileSync('git', args, { cwd: clean, stdio: 'pipe' });
+        cleanGit('init', '-q', '-b', 'main');
+        cleanGit('config', 'user.email', 'test@example.com');
+        cleanGit('config', 'user.name', 'Test');
+        fs.writeFileSync(path.join(clean, 'a.txt'), 'benign\n');
+        cleanGit('add', '.');
+        cleanGit('commit', '-q', '-m', 'benign');
+        const r = run(`git -C "${clean}" push origin main && git -C "${repo}" push origin main`);
+        assert.equal(r.status, 2, r.stderr);
+        assert.match(r.stderr, /hardcoded credential/);
+        assert.ok(r.stderr.includes(clean) && r.stderr.includes(repo), r.stderr);
+      } finally {
+        fs.rmSync(clean, { recursive: true, force: true });
+      }
+    });
+
+    await t.test('an undeterminable later push in a chain is blocked', () => {
+      const r = run(`git -C "${repo}" push origin main && cd "$REPO" && git push origin main`);
+      assert.equal(r.status, 2);
+      assert.match(r.stderr, /Could not determine which repository/);
+    });
+
+    await t.test('a delete-only push sends no commits, so nothing is audited', () => {
+      for (const command of [
+        `git -C "${repo}" push origin --delete feature`,
+        `git -C "${repo}" push origin :feature`,
+        `git -C "${repo}" push origin +:feature`,
+      ]) {
+        const r = run(command);
+        assert.equal(r.status, 0, `${command}\n${r.stderr}`);
+      }
+    });
+
+    await t.test('a matching-branches refspec (: or +:) is audited, not treated as a delete', () => {
+      for (const command of [`git -C "${repo}" push origin :`, `git -C "${repo}" push origin +:`]) {
+        const r = run(command);
+        assert.equal(r.status, 2, `${command}\n${r.stderr}`);
+        assert.match(r.stderr, /hardcoded credential/);
+      }
+    });
+
+    await t.test('a delete-only push in an unknown repo is not blocked', () => {
+      const r = run('cd "$REPO" && git push origin --delete feature');
+      assert.equal(r.status, 0, r.stderr);
+    });
+
+    await t.test('a push that sends commits is still audited when chained with a delete', () => {
+      const r = run(`git -C "${repo}" push origin --delete feature && git -C "${repo}" push origin main`);
+      assert.equal(r.status, 2);
+      assert.match(r.stderr, /hardcoded credential/);
+    });
+
     // Last: it adds an upstream and a staged file to the shared repo.
     await t.test('a staged file does not stop the outgoing commits from being audited', () => {
       git('remote', 'add', 'origin', remote);

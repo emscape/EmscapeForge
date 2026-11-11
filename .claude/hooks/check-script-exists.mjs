@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * check-script-exists.js
+ * check-script-exists.mjs
  * Hook type : PreToolUse — Bash
  * Purpose   : Two checks combined:
  *
@@ -27,9 +27,11 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const { loadHookConfig } = createRequire(import.meta.url)('./lib/hook-config.cjs');
+const { loadHookConfig, resolveProjectDir } = createRequire(import.meta.url)('./lib/hook-config.cjs');
 const CONFIG_PATH = resolve(SCRIPT_DIR, 'config.json');
-const CWD = process.cwd();
+// package_json_paths are relative to the project (CLAUDE_PROJECT_DIR), not
+// to whatever directory the hook happens to be started in.
+const PROJECT_DIR = resolveProjectDir();
 
 function log(msg) {
   process.stderr.write(`[script-guard] ${msg}\n`);
@@ -56,7 +58,7 @@ const {
 // ── Load all package.json scripts from configured paths ───────────────────
 const availableScripts = new Set();
 for (const pkgPath of package_json_paths) {
-  const fullPath = resolve(CWD, pkgPath);
+  const fullPath = resolve(PROJECT_DIR, pkgPath);
   if (!existsSync(fullPath)) continue;
   try {
     const pkg = JSON.parse(readFileSync(fullPath, 'utf8'));
@@ -82,7 +84,9 @@ function isNoOp(command) {
 }
 
 // ── Extract script name from run commands ─────────────────────────────────
-// Matches: npm run X, pnpm run X, yarn run X, npx X, pnpm X (shorthand)
+// Matches: npm run X, pnpm run X, yarn run X. Not `npx X` (runs a package
+// binary, not a script) or `pnpm X` / `yarn X` shorthand (falls back to a
+// binary when no script has that name), since neither has to be a script.
 function extractScriptName(command) {
   const runMatch = command.match(/\b(?:npm|pnpm|yarn)\s+run\s+([^\s;&|]+)/);
   if (runMatch) return runMatch[1];
@@ -132,8 +136,9 @@ process.stdin.on('end', () => {
     process.stderr.write(`   Available: ${[...availableScripts].sort().join(', ') || '(none found)'}\n`);
     process.stderr.write(`   Check for a typo or add the script to package.json before running.\n\n`);
 
+    // Exit 2 is what blocks a PreToolUse call; exit 1 only reports.
     if (on_missing === 'block') {
-      process.exit(1);
+      process.exit(2);
     }
   }
 

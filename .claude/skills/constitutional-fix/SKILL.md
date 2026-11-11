@@ -12,8 +12,6 @@ allowed-tools:
   - Edit
   - Bash
   - TodoWrite
-  - mcp__serena__*
-  - mcp__ai-panel__*
 ---
 
 # Constitutional Fix
@@ -54,7 +52,8 @@ Invoke `/constitutional-fix` to enter remediation loop.
 │  1. Read audit findings             │
 │  2. Prioritize (CRITICAL first)     │
 │  3. Fix violation(s)                │
-│  4. Commit fix                      │
+│  4. Re-audit changed files (no      │
+│     commit — see below)             │
 │  5. Run /constitutional-audit       │
 │  6. If violations: continue loop    │
 │  7. If zero: output promise         │
@@ -86,9 +85,9 @@ Fix all violations found by /constitutional-audit.
 ### Process per iteration:
 1. Read current audit findings
 2. Fix highest severity violation first
-3. Commit with WHY/EXPECTED format
-4. Re-run /constitutional-audit
-5. If ZERO VIOLATIONS, output: <promise>ZERO CONSTITUTIONAL VIOLATIONS</promise>
+3. Re-run /constitutional-audit on the changed file paths (working tree — do NOT commit)
+4. If ZERO VIOLATIONS, output: <promise>ZERO CONSTITUTIONAL VIOLATIONS</promise>
+5. Then hand off: show the user the diff and a proposed WHY/EXPECTED commit message, and commit only after they approve that exact message
 
 ### Violation Priority:
 1. CRITICAL (CL violations)
@@ -193,22 +192,20 @@ SEQ-1: __init__ MUST call timeout_manager.start_monitoring()
 
 ## Infinite Loop Prevention
 
-**Commit before re-audit rule**:
-- Each fix MUST be committed before re-running audit
-- Prevents "fix in memory, audit old code" loop
-- Commit hash proves fix was applied
+**Audit the files on disk, not a commit**:
+- Re-run the audit on the changed file paths after each fix, so it sees the fix as written
+- Prevents the "fix in memory, audit old code" loop without committing anything
+- Never commit inside the loop: every `git commit` needs the user's explicit approval of the exact message, given for that commit
 
 ```bash
 # Fix violation
 # ... edit files ...
 
-# Commit (required before audit)
-git add -A
-git commit -m "WHY: Fix CL12 violation in auth module
-EXPECTED: Contract now specifies POST conditions"
+# Audit the working tree (the audit accepts file paths as well as SHAs)
+/constitutional-audit src/auth/session.py src/auth/session.contract.md
 
-# Now audit will see the fix
-/constitutional-audit HEAD
+# After ZERO VIOLATIONS: show the diff and proposed message, then commit
+# only once the user approves that message
 ```
 
 ## Completion

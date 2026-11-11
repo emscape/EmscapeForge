@@ -39,6 +39,19 @@ shell command).
 
 ---
 
+## Manual Instructions
+
+When the user has to do something by hand (UI clicks, settings pages, commands for them to run),
+give only 1-2 steps at a time and wait for confirmation before the next. Never hand over a long
+numbered list — something is usually wrong in the first step or two (a menu moved, an option
+renamed or removed in the installed version, a different default), and troubleshooting pushes the
+rest of the list out of view. Keep the full plan internally and restate where things stand when
+resuming after troubleshooting. Before naming a menu, setting or flag, verify it exists in the
+installed version (config files, source, `--help`, current docs) rather than describing it from
+training data.
+
+---
+
 ## Constitutional Law (Binding — Summary)
 
 - **CL1 Instruction primacy** — This file, `AGENTS.md`-equivalent guidance, and any active
@@ -103,6 +116,26 @@ etc.).
 - Never commit incomplete work — no placeholders, no TODOs standing in for real implementation.
 - Never run `git commit` or `git push` without explicit permission from the user in the current
   conversation.
+- After pushing a commit that addresses PR review comments (from an automated reviewer or a
+  human), draft a reply for each individual review comment thread — not just the PR as a whole —
+  naming the commit SHA that fixed it. Do this proactively in the same turn as the push, but show
+  the drafted reply text and get approval before actually posting. If a finding was investigated
+  but deliberately left unfixed, draft a reply explaining why rather than leaving the thread
+  silent.
+- One PR at a time: finish and merge the open PR before opening another in the same repo. Add new
+  work or review findings to the open PR, or note them for later (an issue, a follow-up list).
+  Don't stack a new branch on an unmerged one. If a separate PR really seems necessary, ask first.
+- Request a Copilot review (`copilot-pull-request-reviewer[bot]`) after a push only when an
+  earlier Copilot review on that PR ended with `<sub>Review effort: Lite</sub>`. A request made
+  through the API runs at Balanced effort on a PR's first review, so the first review is the
+  user's to request at the effort they choose. Later requests on a PR first reviewed at Lite
+  have also run at Lite. When listing reviews or comments through the API, paginate: it returns
+  30 per page, so the newest can be missed.
+- Fix Copilot review findings (inline threads and summary-only items) by default, without asking
+  whether to. The exceptions are a finding that is astonishingly nitpicky, or a PR that has been
+  through several review rounds and is getting too noisy. In those cases, say so and propose
+  deferring the finding (e.g. to an issue). Commit and push approvals, and sign-off on reply
+  text, still apply.
 
 ---
 

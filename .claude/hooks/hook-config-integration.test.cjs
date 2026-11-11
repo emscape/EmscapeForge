@@ -256,25 +256,64 @@ test('check-search-command.js documented options (README: allow_patterns)', () =
   });
 });
 
-test('check-arch-boundary.js reads the project override (README: arch_rules)', async (t) => {
+test('check-arch-boundary.mjs reads the project override (README: arch_rules)', async (t) => {
   const payload = { tool_name: 'Write', tool_input: { file_path: 'packages/core/a.ts', content: "import { Button } from 'apps/ui/button';\n" } };
   const override = { arch_rules: { enabled: true, rules: [{ package_path: 'packages/core', forbidden_imports: ['apps/ui'], forbidden_frameworks: [], forbidden_content_pattern: null }] } };
   await t.test('no override: allowed (arch_rules disabled by default)', () => {
     withProject(undefined, (p, c) => {
-      const r = runHookRaw('check-arch-boundary.js', p, c, payload);
+      const r = runHookRaw('check-arch-boundary.mjs', p, c, payload);
       assert.equal(r.status, 0, msg('arch baseline', 'README arch_rules disabled by default', 'exit 0', `${r.status} ${r.stderr}`, 'Without a project rule nothing is blocked.'));
     });
   });
   await t.test('override enables a rule: forbidden import blocked with exit 2', () => {
     withProject(override, (p, c) => {
-      const r = runHookRaw('check-arch-boundary.js', p, c, payload);
+      const r = runHookRaw('check-arch-boundary.mjs', p, c, payload);
       assert.equal(r.status, 2, msg('arch override', 'README: rule violation exits 2', 'exit 2', `${r.status} ${r.stderr}`, 'The hook must apply rules from the project-local override.'));
       assert.notEqual(r.stderr.trim(), '', msg('arch override stderr', 'README stderr shows violation', 'non-empty stderr', r.stderr, 'Explain the violation.'));
     });
   });
+
+  // Edit/MultiEdit carry replacement fields, not the file, and this hook runs
+  // before the edit lands, so the file on disk is still the old version.
+  const original = 'export const x = 1;\n';
+  const forbidden = "import { Button } from 'apps/ui/button';\n";
+  function sourceIn(dir) {
+    const file = path.join(dir, 'packages', 'core', 'a.ts');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, original);
+    return file;
+  }
+  await t.test('Edit adding a forbidden import: blocked with exit 2', () => {
+    withProject(override, (p, c) => {
+      const edit = { tool_name: 'Edit', tool_input: { file_path: sourceIn(p), old_string: original, new_string: forbidden + original } };
+      const r = runHookRaw('check-arch-boundary.mjs', p, c, edit);
+      assert.equal(r.status, 2, msg('arch edit', 'Edit payloads have no content field', 'exit 2', `${r.status} ${r.stderr}`, 'Apply old_string -> new_string to the current file and check the result.'));
+    });
+  });
+  await t.test('MultiEdit adding a forbidden import: blocked with exit 2', () => {
+    withProject(override, (p, c) => {
+      const edits = [{ old_string: 'x = 1', new_string: 'x = 2' }, { old_string: 'export', new_string: forbidden + 'export' }];
+      const r = runHookRaw('check-arch-boundary.mjs', p, c, { tool_name: 'MultiEdit', tool_input: { file_path: sourceIn(p), edits } });
+      assert.equal(r.status, 2, msg('arch multiedit', 'MultiEdit applies edits in order', 'exit 2', `${r.status} ${r.stderr}`, 'Apply each edit in sequence and check the result.'));
+    });
+  });
+  await t.test('Edit with no forbidden import: allowed with exit 0', () => {
+    withProject(override, (p, c) => {
+      const edit = { tool_name: 'Edit', tool_input: { file_path: sourceIn(p), old_string: 'x = 1', new_string: 'x = 2' } };
+      const r = runHookRaw('check-arch-boundary.mjs', p, c, edit);
+      assert.equal(r.status, 0, msg('arch benign edit', 'Only violations block', 'exit 0', `${r.status} ${r.stderr}`, 'A clean edit must pass.'));
+    });
+  });
+  await t.test('Edit whose old_string is not in the file: new_string is still checked', () => {
+    withProject(override, (p, c) => {
+      const edit = { tool_name: 'Edit', tool_input: { file_path: sourceIn(p), old_string: 'not present', new_string: forbidden } };
+      const r = runHookRaw('check-arch-boundary.mjs', p, c, edit);
+      assert.equal(r.status, 2, msg('arch unmatched edit', 'The added text must not escape the check', 'exit 2', `${r.status} ${r.stderr}`, 'Fall back to checking new_string.'));
+    });
+  });
 });
 
-test('check-empty-tests.js reads the project override (README: empty_test_guard)', async (t) => {
+test('check-empty-tests.mjs reads the project override (README: empty_test_guard)', async (t) => {
   const content = "describe('suite', () => {\n  it('does something', () => {\n  });\n});\n";
   function payloadFor(dir) {
     const file = path.join(dir, 'sample.test.js');
@@ -283,68 +322,189 @@ test('check-empty-tests.js reads the project override (README: empty_test_guard)
   }
   await t.test('no override: empty describe fails with exit 1', () => {
     withProject(undefined, (p, c) => {
-      const r = runHookRaw('check-empty-tests.js', p, c, payloadFor(p));
+      const r = runHookRaw('check-empty-tests.mjs', p, c, payloadFor(p));
       assert.equal(r.status, 1, msg('empty-tests baseline', 'README: fail when test files have empty blocks (exit 1)', 'exit 1', `${r.status} ${r.stderr}`, 'Default config rejects empty describe blocks.'));
+    });
+  });
+  await t.test('Edit payload (no content field): reads the edited file and fails with exit 1', () => {
+    withProject(undefined, (p, c) => {
+      const { tool_input: { file_path } } = payloadFor(p);
+      const edit = { tool_name: 'Edit', tool_input: { file_path, old_string: 'x', new_string: 'y' } };
+      const r = runHookRaw('check-empty-tests.mjs', p, c, edit);
+      assert.equal(r.status, 1, msg('empty-tests edit', 'Edit/MultiEdit carry no full content', 'exit 1', `${r.status} ${r.stderr}`, 'After an edit, read the file from file_path when tool_input.content is absent.'));
+    });
+  });
+  function writePayload(dir, body) {
+    const file = path.join(dir, 'node.test.js');
+    fs.writeFileSync(file, body);
+    return { tool_name: 'Write', tool_input: { file_path: file, content: body } };
+  }
+  await t.test('Node assert methods count as assertions: exit 0', () => {
+    const body = "test('adds', () => {\n  assert.equal(add(1, 2), 3);\n  assert.strict.deepEqual([1], [1]);\n});\n";
+    withProject(undefined, (p, c) => {
+      const r = runHookRaw('check-empty-tests.mjs', p, c, writePayload(p, body));
+      assert.equal(r.status, 0, msg('empty-tests node assert', 'assert.equal(...) is a real assertion', 'exit 0', `${r.status} ${r.stderr}`, 'Recognize assert.<method>(...) as well as assert(...).'));
+    });
+  });
+  await t.test('test block with no assertion call at all: still exit 1', () => {
+    const body = "test('runs', () => {\n  const assertion = add(1, 2);\n});\n";
+    withProject(undefined, (p, c) => {
+      const r = runHookRaw('check-empty-tests.mjs', p, c, writePayload(p, body));
+      assert.equal(r.status, 1, msg('empty-tests no assert', 'A file with no assertion calls is theater', 'exit 1', `${r.status} ${r.stderr}`, 'Only an assert/expect call counts, not an identifier that starts with assert.'));
+    });
+  });
+  await t.test("empty describe('suite', () => {}) beside a real test: exit 1 naming the describe", () => {
+    const body = "describe('empty suite', () => {});\ntest('adds', () => {\n  assert.equal(add(1, 2), 3);\n});\n";
+    withProject(undefined, (p, c) => {
+      const r = runHookRaw('check-empty-tests.mjs', p, c, writePayload(p, body));
+      assert.equal(r.status, 1, msg('empty-tests empty describe', 'README: fail when test files have empty blocks', 'exit 1', `${r.status} ${r.stderr}`, 'The callback is inside the describe( ) parentheses, so the pattern must not stop at its ().'));
+      assert.match(r.stderr, /Empty describe\/suite block \(1 found\)/, msg('empty-tests empty describe stderr', 'README', 'names 1 empty describe block', r.stderr, 'Report the empty describe, not only the assertion check.'));
+    });
+  });
+  await t.test("empty it('x', () => {}) and test('y', async () => {}) beside a real test: exit 1 counting both", () => {
+    const body = "it('pending', () => {});\ntest('later', async () => { });\ntest('adds', () => {\n  assert.equal(add(1, 2), 3);\n});\n";
+    withProject(undefined, (p, c) => {
+      const r = runHookRaw('check-empty-tests.mjs', p, c, writePayload(p, body));
+      assert.equal(r.status, 1, msg('empty-tests empty it', 'README: fail when test files have empty blocks', 'exit 1', `${r.status} ${r.stderr}`, 'Match empty it/test callbacks, sync or async.'));
+      assert.match(r.stderr, /Empty it\/test block \(2 found\)/, msg('empty-tests empty it stderr', 'README', 'names 2 empty it/test blocks', r.stderr, 'Count each empty it/test block.'));
+    });
+  });
+  await t.test('describe with a non-empty body and assertions: exit 0', () => {
+    const body = "describe('math', () => {\n  test('adds', () => {\n    assert.equal(add(1, 2), 3);\n  });\n});\n";
+    withProject(undefined, (p, c) => {
+      const r = runHookRaw('check-empty-tests.mjs', p, c, writePayload(p, body));
+      assert.equal(r.status, 0, msg('empty-tests full describe', 'Only empty blocks fail', 'exit 0', `${r.status} ${r.stderr}`, 'A describe whose body has tests must pass.'));
     });
   });
   await t.test('override enabled=false: silent, exit 0', () => {
     withProject({ empty_test_guard: { enabled: false } }, (p, c) => {
-      const r = runHookRaw('check-empty-tests.js', p, c, payloadFor(p));
+      const r = runHookRaw('check-empty-tests.mjs', p, c, payloadFor(p));
       assert.equal(r.status, 0, msg('empty-tests override exit', 'README project can disable non-protected guards', 'exit 0', `${r.status} ${r.stderr}`, 'Project override must reach this hook.'));
       assert.equal(r.stderr, '', msg('empty-tests override stderr', 'README', 'empty stderr', r.stderr, 'Disabled guard is silent.'));
     });
   });
 });
 
-test('check-todo-format.js reads the project override (README: todo_format)', async (t) => {
+test('check-todo-format.mjs reads the project override (README: todo_format)', async (t) => {
   const payload = { tool_name: 'Write', tool_input: { file_path: 'a.js', content: '// TODO fix this later\n' } };
   await t.test('no override: disabled by default, silent exit 0', () => {
     withProject(undefined, (p, c) => {
-      const r = runHookRaw('check-todo-format.js', p, c, payload);
+      const r = runHookRaw('check-todo-format.mjs', p, c, payload);
       assert.equal(r.status, 0, msg('todo baseline exit', 'config todo_format.enabled=false', 'exit 0', r.status, 'Disabled by default.'));
       assert.equal(r.stderr, '', msg('todo baseline stderr', 'config', 'empty stderr', r.stderr, 'Disabled hook is silent.'));
     });
   });
   await t.test('override enabled + on_violation=block: exit 1 with stderr', () => {
     withProject({ todo_format: { enabled: true, on_violation: 'block' } }, (p, c) => {
-      const r = runHookRaw('check-todo-format.js', p, c, payload);
+      const r = runHookRaw('check-todo-format.mjs', p, c, payload);
       assert.equal(r.status, 1, msg('todo block', 'README on_violation block exits 1', 'exit 1', `${r.status} ${r.stderr}`, 'Project override must enable and tune the hook.'));
       assert.notEqual(r.stderr.trim(), '', msg('todo block stderr', 'README', 'non-empty stderr', r.stderr, 'Report the bad TODO.'));
     });
   });
   await t.test('override enabled + on_violation=warn: exit 0 with stderr', () => {
     withProject({ todo_format: { enabled: true, on_violation: 'warn' } }, (p, c) => {
-      const r = runHookRaw('check-todo-format.js', p, c, payload);
+      const r = runHookRaw('check-todo-format.mjs', p, c, payload);
       assert.equal(r.status, 0, msg('todo warn exit', 'README on_violation warn exits 0', 'exit 0', r.status, 'Warn mode never fails.'));
       assert.notEqual(r.stderr.trim(), '', msg('todo warn stderr', 'README', 'non-empty stderr', r.stderr, 'Warn mode prints.'));
     });
   });
+  // PostToolUse: after an Edit, the file on disk is the edited version.
+  function editOf(dir, body) {
+    const file = path.join(dir, 'b.js');
+    fs.writeFileSync(file, body);
+    return { tool_name: 'Edit', tool_input: { file_path: file, old_string: 'x', new_string: 'y' } };
+  }
+  await t.test('Edit payload (no content field): bare TODO in the edited file blocks with exit 1', () => {
+    withProject({ todo_format: { enabled: true, on_violation: 'block' } }, (p, c) => {
+      const r = runHookRaw('check-todo-format.mjs', p, c, editOf(p, 'const y = 1;\n// TODO fix this later\n'));
+      assert.equal(r.status, 1, msg('todo edit', 'Edit/MultiEdit carry no full content', 'exit 1', `${r.status} ${r.stderr}`, 'Read the file from file_path when tool_input.content is absent.'));
+    });
+  });
+  await t.test('Edit payload with a conforming TODO: exit 0', () => {
+    withProject({ todo_format: { enabled: true, on_violation: 'block' } }, (p, c) => {
+      const r = runHookRaw('check-todo-format.mjs', p, c, editOf(p, 'const y = 1;\n// TODO(owner): fix this later\n'));
+      assert.equal(r.status, 0, msg('todo edit ok', 'Conforming TODOs pass', 'exit 0', `${r.status} ${r.stderr}`, 'Only bare TODOs are violations.'));
+    });
+  });
 });
 
-test('validate-content.js reads the project override (README: content_watch)', async (t) => {
+test('validate-content.mjs reads the project override (README: content_watch)', async (t) => {
   const payload = { tool_name: 'Write', tool_input: { file_path: 'packages/content/items.json' } };
   function watch(validate_command) {
     return { content_watch: { enabled: true, path_pattern: 'packages/content', file_extensions: ['.json'], validate_command } };
   }
   await t.test('no override: disabled by default, silent exit 0', () => {
     withProject(undefined, (p, c) => {
-      const r = runHookRaw('validate-content.js', p, c, payload);
+      const r = runHookRaw('validate-content.mjs', p, c, payload);
       assert.equal(r.status, 0, msg('content baseline exit', 'config content_watch.enabled=false', 'exit 0', `${r.status} ${r.stderr}`, 'Disabled by default.'));
       assert.equal(r.stderr, '', msg('content baseline stderr', 'config', 'empty stderr', r.stderr, 'Disabled hook is silent.'));
     });
   });
   await t.test('override enables a failing validate_command: exit 1', () => {
     withProject(watch('node -e "process.exit(3)"'), (p, c) => {
-      const r = runHookRaw('validate-content.js', p, c, payload);
+      const r = runHookRaw('validate-content.mjs', p, c, payload);
       assert.equal(r.status, 1, msg('content fail exit', 'README: validation failure exits 1', 'exit 1', `${r.status} ${r.stderr}`, 'The hook must apply content_watch from the project-local override.'));
       assert.ok(r.stderr.includes('CONTENT VALIDATION FAILED'), msg('content fail stderr', 'README', "stderr contains 'CONTENT VALIDATION FAILED'", r.stderr, 'Report the failed validation.'));
     });
   });
   await t.test('override enables a passing validate_command: exit 0', () => {
     withProject(watch('node -e "process.exit(0)"'), (p, c) => {
-      const r = runHookRaw('validate-content.js', p, c, payload);
+      const r = runHookRaw('validate-content.mjs', p, c, payload);
       assert.equal(r.status, 0, msg('content pass exit', 'README: passing validation exits 0', 'exit 0', `${r.status} ${r.stderr}`, 'A passing command lets the write through.'));
       assert.ok(r.stderr.includes('Validation passed'), msg('content pass stderr', 'README', "stderr contains 'Validation passed'", r.stderr, 'The hook ran the override command.'));
+    });
+  });
+});
+
+test('check-git-push-audit.js reads the project override (README: push_audit)', async (t) => {
+  // cwd is a temp dir that isn't a git repo, so an enabled audit can't read
+  // the outgoing changes and blocks; a disabled one must not run at all.
+  await t.test('no override: the audit runs and blocks an unauditable push', () => {
+    withProject(undefined, (p, c) => {
+      const r = runHook('check-git-push-audit.js', p, c, bash('git push origin feature'));
+      assert.equal(r.status, 2, msg('push audit baseline', 'push_audit.enabled defaults to true', 'exit 2', `${r.status} ${r.stderr}`, 'The audit must run when not disabled.'));
+    });
+  });
+
+  await t.test('override push_audit.enabled=false: allowed silently', () => {
+    withProject({ push_audit: { enabled: false } }, (p, c) => {
+      const r = runHook('check-git-push-audit.js', p, c, bash('git push origin feature'));
+      assert.equal(r.status, 0, msg('push audit disabled exit', 'project config disables push_audit', 'exit 0', `${r.status} ${r.stderr}`, 'Honor push_audit.enabled=false before auditing.'));
+      assert.equal(r.stdout, '', msg('push audit disabled stdout', 'disabled guard', 'empty stdout', r.stdout, 'A disabled audit must not emit a block decision.'));
+    });
+  });
+});
+
+test('check-commit-message.js reads the project override (README: commit_guard)', async (t) => {
+  const BAD = bash('git commit -m "no sections"');
+
+  await t.test('no override: the shared default blocks', () => {
+    withProject(undefined, (p, c) => {
+      const r = runHook('check-commit-message.js', p, c, BAD);
+      assert.equal(r.status, 2, msg('commit guard default', 'commit_guard defaults to enabled + block', 'exit 2', `${r.status} ${r.stderr}`, 'A registered guard must keep blocking unless a project opts out.'));
+    });
+  });
+
+  await t.test('override enabled + on_violation=block: blocks', () => {
+    withProject({ commit_guard: { enabled: true, on_violation: 'block' } }, (p, c) => {
+      const r = runHook('check-commit-message.js', p, c, BAD);
+      assert.equal(r.status, 2, msg('commit guard block', 'on_violation=block', 'exit 2', `${r.status} ${r.stderr}`, 'Block a commit missing the required markers.'));
+    });
+  });
+
+  await t.test('override enabled + on_violation=warn: warns on stderr, exit 0', () => {
+    withProject({ commit_guard: { enabled: true, on_violation: 'warn' } }, (p, c) => {
+      const r = runHook('check-commit-message.js', p, c, BAD);
+      assert.equal(r.status, 0, msg('commit guard warn exit', 'on_violation=warn', 'exit 0', `${r.status} ${r.stdout}`, 'Warn mode never blocks.'));
+      assert.match(r.stderr, /WHY:/, msg('commit guard warn stderr', 'on_violation=warn', 'stderr names the missing marker', r.stderr, 'Explain what is missing.'));
+    });
+  });
+
+  await t.test('override enabled=false: allowed silently', () => {
+    withProject({ commit_guard: { enabled: false } }, (p, c) => {
+      const r = runHook('check-commit-message.js', p, c, BAD);
+      assert.equal(r.status, 0, msg('commit guard disabled exit', 'enabled=false', 'exit 0', r.status, 'Disabled guard allows.'));
+      assert.equal(r.stderr + r.stdout, '', msg('commit guard disabled output', 'enabled=false', 'no output', r.stderr + r.stdout, 'Disabled guard is silent.'));
     });
   });
 });

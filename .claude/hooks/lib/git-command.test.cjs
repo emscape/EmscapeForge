@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
-const { commandSegments, isGitPush, pushArgs, pushTargetDir, splitRefspec } = require('./git-command.cjs');
+const { commandSegments, isGitPush, pushArgs, pushSegments, splitRefspec } = require('./git-command.cjs');
 
 const BASE = path.resolve(os.tmpdir(), 'base');
 
@@ -171,16 +171,28 @@ test('commandSegments cwd', async (t) => {
   }
 });
 
-test('pushTargetDir', async (t) => {
+test('pushSegments', async (t) => {
+  const pushDirs = (cmd) => pushSegments(cmd, BASE).map((s) => s.dir);
+
   await t.test('the directory of the push segment when it exists', () => {
-    assert.equal(pushTargetDir(`cd "${__dirname}" && git push`, BASE), __dirname);
-    assert.equal(pushTargetDir(`git -C "${__dirname}" push`, BASE), __dirname);
+    assert.deepEqual(pushDirs(`cd "${__dirname}" && git push`), [__dirname]);
+    assert.deepEqual(pushDirs(`git -C "${__dirname}" push`), [__dirname]);
   });
 
-  await t.test('null for a missing directory, an unknown one, or no push', () => {
-    assert.equal(pushTargetDir('cd does-not-exist && git push', BASE), null);
-    assert.equal(pushTargetDir('cd "$REPO" && git push', BASE), null);
-    assert.equal(pushTargetDir(`cd "${__dirname}" && git status`, BASE), null);
+  await t.test('null for a missing directory or an unknown one', () => {
+    assert.deepEqual(pushDirs('cd does-not-exist && git push'), [null]);
+    assert.deepEqual(pushDirs('cd "$REPO" && git push'), [null]);
+  });
+
+  await t.test('no entries when nothing is pushed', () => {
+    assert.deepEqual(pushSegments(`cd "${__dirname}" && git status`, BASE), []);
+  });
+
+  await t.test('every push in a chain, each with its own directory', () => {
+    const parent = path.dirname(__dirname);
+    const pushes = pushSegments(`git -C "${__dirname}" push origin a && git status && git -C "${parent}" push origin b`, BASE);
+    assert.deepEqual(pushes.map((s) => s.dir), [__dirname, parent]);
+    assert.deepEqual(pushes.map((s) => s.normalized), ['git push origin a', 'git push origin b']);
   });
 });
 
@@ -264,6 +276,34 @@ test('pushArgs', async (t) => {
   await t.test('a quoted word with spaces stays one argument, and concatenated quotes are removed', () => {
     assert.deepEqual(pushArgs('git push "/tmp/remote repo" feature'), { remote: '/tmp/remote repo', refspecs: ['feature'], sets: [], deletes: false });
     assert.deepEqual(pushArgs("git push --repo '/tmp/a b' feat\"ure\""), { remote: '/tmp/a b', refspecs: ['feature'], sets: [], deletes: false });
+  });
+
+  await t.test('ANSI-C quotes and backslash escapes are removed as the shell does', () => {
+    assert.deepEqual(pushArgs("git push origin $'main'").refspecs, ['main']);
+    assert.deepEqual(pushArgs('git push origin ma\\in').refspecs, ['main']);
+    assert.deepEqual(pushArgs('git push my\\ remote fe\\ature:"ma"in'), { remote: 'my remote', refspecs: ['feature:main'], sets: [], deletes: false });
+    assert.deepEqual(pushArgs('git push "a \\"b\\"" feature'), { remote: 'a "b"', refspecs: ['feature'], sets: [], deletes: false });
+  });
+
+  await t.test('ANSI-C numeric escapes are decoded as bash does', () => {
+    assert.deepEqual(pushArgs("git push origin $'ma\\x69n'").refspecs, ['main']);
+    assert.deepEqual(pushArgs("git push origin $'\\x6Dai\\x6e'").refspecs, ['main'], 'hex digits in either case');
+    assert.deepEqual(pushArgs("git push origin $'ma\\151n'").refspecs, ['main'], 'octal');
+    assert.deepEqual(pushArgs("git push origin $'ma\\u0069n'").refspecs, ['main'], '\\u, four hex digits');
+    assert.deepEqual(pushArgs("git push origin $'ma\\U00000069n'").refspecs, ['main'], '\\U, eight hex digits');
+    assert.deepEqual(pushArgs("git push origin $'a\\x7'").refspecs, ['a\x07'], 'fewer digits than the maximum');
+    assert.deepEqual(pushArgs("git push origin $'a\\xzz'").refspecs, ['a\\xzz'], 'no hex digit: left as written');
+  });
+
+  await t.test('an unquoted Windows path keeps its backslashes', () => {
+    assert.equal(pushArgs('git push C:\\repos\\backup feature').remote, 'C:\\repos\\backup');
+    assert.equal(pushArgs('git push ..\\backup feature').remote, '..\\backup');
+  });
+
+  await t.test('a comment and redirections are not arguments', () => {
+    assert.deepEqual(pushArgs("git push origin main # don't forget").refspecs, ['main']);
+    assert.deepEqual(pushArgs('git push origin main >/dev/null 2> err.log').refspecs, ['main']);
+    assert.deepEqual(pushArgs('git push origin ">" main').refspecs, ['>', 'main']);
   });
 });
 

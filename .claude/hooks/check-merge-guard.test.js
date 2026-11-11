@@ -428,3 +428,104 @@ test('findMergeReason', async (t) => {
     assert.equal(blocked('(cd repo && git push origin main)', onFeatureBranch), true);
   });
 });
+
+test('PR #72 review findings', async (t) => {
+  await t.test('a force-prefixed refspec to a protected branch is blocked', () => {
+    for (const cmd of [
+      'git push origin +master',
+      'git push origin +refs/heads/master',
+      'git push origin +feature:main',
+      'git push origin +feature:refs/heads/main',
+    ]) {
+      assert.equal(blocked(cmd, onFeatureBranch), true,
+        `${cmd} force-pushes to a protected branch; the leading + only adds --force for that refspec.`);
+    }
+  });
+
+  await t.test('a comment or redirection is not a refspec', () => {
+    for (const cmd of [
+      'git push origin # pushes the current branch',
+      'git push origin >/dev/null',
+      'git push origin > out.log',
+      'git push origin 2>&1',
+      'git push origin 2>/dev/null',
+    ]) {
+      assert.equal(blocked(cmd, onMaster), true,
+        `${cmd} is an implicit push of the current branch (master); the comment/redirection is not a branch name.`);
+    }
+    assert.equal(blocked('git push origin feature # not main', onMaster), false,
+      'an explicit non-protected branch is still allowed when the comment mentions main.');
+  });
+
+  await t.test('a checkout in one repo does not decide the branch in another', () => {
+    const branchIn = (dir) => (dir && dir.endsWith('b') ? 'fix/unrelated-feature' : 'master');
+    assert.equal(blocked('git -C a checkout main && git -C b push', branchIn), false,
+      'repo b is on a feature branch; the checkout of main happened in repo a.');
+    assert.equal(blocked('git -C a checkout main && git -C a push', onFeatureBranch), true,
+      'repo a is checked out to main before its implicit push.');
+    assert.equal(blocked('git -C a checkout main && git -C b merge x', branchIn), false,
+      'the merge runs in repo b, which is on a feature branch.');
+  });
+});
+
+test('PR #17 review findings', async (t) => {
+  await t.test('the latest checkout in a repo decides its branch, not the first', () => {
+    assert.equal(blocked('git -C a checkout main && git -C a checkout feature && git -C a push', onFeatureBranch), false,
+      'repo a ends on feature before its implicit push.');
+    assert.equal(blocked('git -C a checkout feature && git -C a checkout main && git -C a push', onFeatureBranch), true,
+      'repo a ends on main before its implicit push.');
+    assert.equal(blocked('git checkout main && git push && git checkout feature', onFeatureBranch), true,
+      'the push runs while on main; a later checkout does not change that.');
+  });
+
+  await t.test('a tag-only push from a protected branch is allowed', () => {
+    assert.equal(blocked('git push origin --tags', onMaster), false,
+      '--tags with no refspec pushes only tags, not the current branch.');
+    assert.equal(blocked('git push origin --tags main', onFeatureBranch), true,
+      'an explicit protected refspec alongside --tags is still blocked.');
+  });
+
+  await t.test('a file checkout does not move off a protected branch', () => {
+    assert.equal(blocked('git checkout main && git checkout -- app.js && git push', onFeatureBranch), true,
+      '`git checkout -- <file>` restores a file and stays on main.');
+    assert.equal(blocked('git checkout main && git checkout . && git push', onFeatureBranch), true,
+      '`git checkout .` restores files and stays on main.');
+  });
+});
+
+test('shell quote removal in branch names', async (t) => {
+  await t.test('an ANSI-C quoted or backslash-escaped protected refspec is blocked', () => {
+    assert.equal(blocked("git push origin $'main'", onFeatureBranch), true, "$'main' is main to the shell.");
+    assert.equal(blocked('git push origin ma\\in', onFeatureBranch), true, 'ma\\in is main to the shell.');
+    assert.equal(blocked("git push origin feature:$'mas'ter", onFeatureBranch), true, "$'mas'ter is master.");
+    assert.equal(blocked('git push origin feature:"ma"\\in', onFeatureBranch), true, '"ma"\\in is main.');
+  });
+
+  await t.test('hex, octal and Unicode ANSI-C escapes are decoded before matching', () => {
+    assert.equal(blocked("git push origin $'ma\\x69n'", onFeatureBranch), true, "\\x69 is 'i'.");
+    assert.equal(blocked("git push origin $'ma\\151n'", onFeatureBranch), true, "\\151 (octal) is 'i'.");
+    assert.equal(blocked("git push origin $'ma\\u0069n'", onFeatureBranch), true, "\\u0069 is 'i'.");
+    assert.equal(blocked("git push origin $'\\U0000006daster'", onFeatureBranch), true, "\\U0000006d is 'm'.");
+    assert.equal(blocked("git checkout $'\\x6d\\x61\\x69\\x6e' && git push", onFeatureBranch), true,
+      'a fully hex-escaped checkout of main is tracked.');
+  });
+
+  await t.test('an ANSI-C quoted or backslash-escaped protected checkout is tracked', () => {
+    assert.equal(blocked("git checkout $'main' && git push", onFeatureBranch), true,
+      "the implicit push runs on main after `git checkout $'main'`.");
+    assert.equal(blocked('git checkout ma\\in && git push', onFeatureBranch), true,
+      'the implicit push runs on main after `git checkout ma\\in`.');
+    assert.equal(blocked("git switch -c $'main' && git merge feature", onFeatureBranch), true,
+      "the merge runs on main after `git switch -c $'main'`.");
+  });
+
+  await t.test('escaped names of other branches are not flagged', () => {
+    assert.equal(blocked("git push origin $'feature'", onFeatureBranch), false);
+    assert.equal(blocked('git checkout fe\\ature && git push', onFeatureBranch), false);
+  });
+
+  await t.test('a comment containing an apostrophe does not change the result', () => {
+    assert.equal(blocked("git push origin main # don't", onFeatureBranch), true);
+    assert.equal(blocked("git push origin feature # don't", onFeatureBranch), false);
+  });
+});

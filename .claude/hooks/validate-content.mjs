@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * validate-content.js
+ * validate-content.mjs
  * Hook type : PostToolUse — Write | Edit | MultiEdit
  * Purpose   : Run a configurable validation command whenever a watched file
  *             is written. Fails loudly on validation errors (no silent skips).
